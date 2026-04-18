@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+exports/
+.env
+*.log
+.pytest_cache/
+.mypy_cache/
+*.db
+Documents/
+.codex_tmp_backup_release_patch/
+.pytest_tmp_cache/
+.pytest_tmp_targeted/
+.pytest_tmp_vnext/

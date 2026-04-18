@@ -1,0 +1,4 @@
+fixture_id,market,side,line,bookmaker,odds,documentary_status,real_status,price_state,executable
+1001,OU_FT,UNDER,2.5,Bet365,1.88,DOC_STRONG,REAL_VALID,VIVANT,True
+1001,BTTS,NO,,Bet365,1.72,DOC_STRONG,NO_BET,VIVANT,True
+1002,RESULT,HOME,,Bet365,2.40,DOC_STRONG,TOP_BET,VIVANT,True
