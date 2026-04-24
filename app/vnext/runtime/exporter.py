@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.vnext.runtime.models import RuntimeCycleResult
+
+
+def _jsonify(value: Any) -> Any:
+    if is_dataclass(value):
+        return _jsonify(asdict(value))
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _jsonify(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonify(item) for item in value]
+    return value
 
 
 def export_cycle_jsonl(path: Path, cycle: RuntimeCycleResult) -> None:
@@ -19,10 +32,10 @@ def export_cycle_jsonl(path: Path, cycle: RuntimeCycleResult) -> None:
         "silent_count": cycle.counters.silent_count,
         "unsent_shadow_count": cycle.counters.unsent_shadow_count,
         "notifier_attempt_count": cycle.counters.notifier_attempt_count,
-        "payloads": [asdict(payload) for payload in cycle.payloads],
-        "refusal_summaries": cycle.refusal_summaries,
-        "fixture_audits": list(cycle.fixture_audits),
-        "publication_records": list(cycle.publication_records),
+        "payloads": [_jsonify(payload) for payload in cycle.payloads],
+        "refusal_summaries": _jsonify(cycle.refusal_summaries),
+        "fixture_audits": [_jsonify(item) for item in cycle.fixture_audits],
+        "publication_records": [_jsonify(item) for item in cycle.publication_records],
         "ops_flags": list(cycle.ops_flags),
         "notifier_mode": cycle.notifier_mode,
         "source": cycle.source,
