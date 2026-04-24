@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +19,7 @@ from app.vnext.ops.inspection import resolve_latest_run_index_path, write_latest
 from app.vnext.ops.reporter import build_runtime_report, format_runtime_report
 from app.vnext.ops.replay import replay_runtime_export
 from app.vnext.ops.runtime_cli import (
+    EXIT_INSPECT_SOURCE_FAILED,
     EXIT_LIVE_SOURCE_UNAVAILABLE,
     EXIT_PATH_UNWRITABLE,
     EXIT_PREFLIGHT_FAILED,
@@ -486,6 +489,33 @@ def main() -> int:
         cycles_executed=cycles_executed,
         ops_flags=sorted_ops_flags,
     )
+
+    # Publish latest successful export to the live path and validate it.
+    if final_status.startswith("success"):
+        publish_target = os.environ.get("VNEXT_LIVE_EXPORT_PATH", "")
+        if publish_target:
+            live_path = Path(publish_target)
+        else:
+            live_path = Path("exports") / "vnext" / "live_bot.jsonl"
+
+        try:
+            from app.vnext.ops.publisher import PublishError, publish_and_validate
+
+            publish_result = publish_and_validate(Path(export_path), live_path)
+            print(
+                f"vnext_live_published path={live_path} "
+                f"rows_with_missing_audits={publish_result.get('rows_with_missing_audits', 0)}"
+            )
+        except PublishError as exc:
+            print(f"vnext_live_publish_error reason={exc}", file=sys.stderr)
+            return EXIT_INSPECT_SOURCE_FAILED
+        except Exception as exc:
+            print(
+                f"vnext_live_publish_error reason=unexpected detail={exc}",
+                file=sys.stderr,
+            )
+            return EXIT_INSPECT_SOURCE_FAILED
+
     if final_status == "success_degraded":
         return EXIT_SUCCESS_DEGRADED
     return EXIT_SUCCESS
