@@ -422,9 +422,10 @@ def test_runner_accepts_concrete_discord_vnext_notifier() -> None:
 
     assert cycle.counters.notifier_attempt_count == 1
     assert cycle.counters.notified_count == 1
-    assert cycle.notifier_mode == "aggregate"
+    assert cycle.notifier_mode == "explicit_ack"
     assert sent_messages
-    assert all(record["notified"] is False for record in cycle.publication_records)
+    assert cycle.publication_records
+    assert all(record["notified"] is True for record in cycle.publication_records)
 
 
 def test_shadow_runtime_counts_unsent_payloads_explicitly() -> None:
@@ -793,3 +794,4 @@ def test_runtime_audit_exports_no_offer_found_execution_observation_without_fina
     assert audit["bookmaker_diversity_score"] is None
     assert audit["price_integrity_score"] is None
     assert audit["retrievability_score"] is None
+    

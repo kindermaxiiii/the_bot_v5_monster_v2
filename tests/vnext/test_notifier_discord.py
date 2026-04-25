@@ -25,7 +25,7 @@ def _build_bundle(publish_channel: str, fixture_id: int) -> PublicMessageBundle:
     )
 
 
-def test_discord_vnext_notifier_returns_aggregate_result_without_record_acks() -> None:
+def test_discord_vnext_notifier_returns_explicit_ack_result() -> None:
     sent_messages: list[tuple[str, str]] = []
 
     def fake_sender(webhook_url: str, content: str) -> DiscordSendResult:
@@ -41,8 +41,10 @@ def test_discord_vnext_notifier_returns_aggregate_result_without_record_acks() -
 
     assert result.attempted_count == 1
     assert result.notified_count == 1
-    assert result.acked_records == ()
-    assert result.mode == "aggregate"
+    assert result.mode == "explicit_ack"
+    assert len(result.acked_records) == 1
+    assert result.acked_records[0].fixture_id == 999
+    assert result.acked_records[0].public_status == "WATCHLIST"
     assert sent_messages == [
         (
             "https://discord.example/webhook",
@@ -73,6 +75,8 @@ def test_discord_vnext_notifier_routes_by_publish_channel() -> None:
 
     assert result.attempted_count == 2
     assert result.notified_count == 2
+    assert result.mode == "explicit_ack"
+    assert len(result.acked_records) == 2
     assert sent_messages[0][0] == "https://discord.example/elite"
     assert sent_messages[1][0] == "https://discord.example/watchlist"
 
@@ -97,4 +101,4 @@ def test_discord_vnext_notifier_only_counts_sender_attempts() -> None:
     assert result.attempted_count == 1
     assert result.notified_count == 0
     assert result.acked_records == ()
-    assert result.mode == "aggregate"
+    assert result.mode == "explicit_ack"
