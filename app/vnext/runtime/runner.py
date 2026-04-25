@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -27,6 +28,11 @@ from app.vnext.selection.match_selector import build_match_market_selection_resu
 from app.vnext.execution.models import ExecutableMarketSelectionResult, ExecutionCandidate
 
 
+MIN_PUBLISHED_ODDS = 1.50
+MAX_PUBLISHED_ODDS = 2.80
+ODDS_OUT_OF_RANGE_REASON = "odds_out_of_range"
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -37,6 +43,50 @@ def _collect_refusals(results) -> tuple[str, ...]:
         refusals.update(result.governance_refusal_summary)
         refusals.update(result.execution_refusal_summary)
     return tuple(sorted(refusals))
+
+
+def _append_unique_reason(existing: tuple[str, ...], reason: str) -> tuple[str, ...]:
+    if reason in existing:
+        return existing
+    return (*existing, reason)
+
+
+def _published_odds_allowed(raw_odds: object) -> bool:
+    try:
+        odds = float(raw_odds)
+    except (TypeError, ValueError):
+        return False
+    return MIN_PUBLISHED_ODDS <= odds <= MAX_PUBLISHED_ODDS
+
+
+def _apply_published_odds_guard(
+    results: tuple[PublishableMatchResult, ...],
+) -> tuple[PublishableMatchResult, ...]:
+    guarded: list[PublishableMatchResult] = []
+
+    for result in results:
+        if result.publish_status != "PUBLISH":
+            guarded.append(result)
+            continue
+
+        offer = result.selected_offer
+        raw_odds = getattr(offer, "odds_decimal", None) if offer is not None else None
+        if _published_odds_allowed(raw_odds):
+            guarded.append(result)
+            continue
+
+        guarded.append(
+            replace(
+                result,
+                publish_status="DO_NOT_PUBLISH",
+                execution_refusal_summary=_append_unique_reason(
+                    tuple(result.execution_refusal_summary),
+                    ODDS_OUT_OF_RANGE_REASON,
+                ),
+            )
+        )
+
+    return tuple(guarded)
 
 
 def _selection_observation(
@@ -106,68 +156,14 @@ def _publishability_probe_candidate(
     )
     if not offer_present:
         return None
-
     primary_template = execution_result.template_key
     for candidate in offer_present:
         if candidate.template_key == primary_template:
             return candidate
-
     return max(
         offer_present,
         key=lambda candidate: (candidate.quality.publishability_score, candidate.selection_score),
     )
-
-
-def _aggregate_execution_blockers(
-    candidates: tuple[ExecutionCandidate, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        sorted(
-            {
-                blocker.code
-                for candidate in candidates
-                for blocker in candidate.blockers
-            }
-        )
-    )
-
-
-def _focused_execution_blockers(
-    execution_result: ExecutableMarketSelectionResult | None,
-    probe_candidate: ExecutionCandidate | None,
-) -> tuple[str, ...]:
-    if execution_result is None:
-        return ()
-
-    if execution_result.execution_candidate is not None:
-        return tuple(sorted(blocker.code for blocker in execution_result.execution_candidate.blockers))
-
-    if probe_candidate is not None:
-        return tuple(sorted(blocker.code for blocker in probe_candidate.blockers))
-
-    return ()
-
-
-def _execution_blocker_summary(
-    execution_result: ExecutableMarketSelectionResult | None,
-    probe_candidate: ExecutionCandidate | None,
-) -> tuple[str, ...]:
-    if execution_result is None:
-        return ()
-
-    candidates = execution_result.alternatives
-    aggregate_blockers = _aggregate_execution_blockers(candidates)
-    focused_blockers = _focused_execution_blockers(execution_result, probe_candidate)
-
-    # Important:
-    # - for a retained / publishable candidate, we want the audit to describe the
-    #   final candidate (or the best offer-present probe candidate), not every
-    #   failed template that was tried along the way.
-    # - when there is no offer at all, the aggregate summary is still the most
-    #   useful explanation.
-    if focused_blockers:
-        return focused_blockers
-    return aggregate_blockers
 
 
 def _execution_observation(
@@ -183,12 +179,13 @@ def _execution_observation(
     if final_execution_refusal_reason is None and result.execution_refusal_summary:
         final_execution_refusal_reason = result.execution_refusal_summary[0]
 
-    if result.publish_status == "PUBLISH" and execution_result.execution_candidate is not None:
-        blocked_execution_reasons_summary = tuple(
-            blocker.code for blocker in execution_result.execution_candidate.blockers
-        )
-    else:
-        blocked_execution_reasons_summary = tuple(
+    return {
+        "execution_candidate_count": len(candidates),
+        "execution_selectable_count": sum(1 for candidate in candidates if candidate.is_selectable),
+        "attempted_template_keys": tuple(candidate.template_key for candidate in candidates),
+        "offer_present_template_keys": tuple(candidate.template_key for candidate in candidates if candidate.offer_exists),
+        "missing_offer_template_keys": tuple(candidate.template_key for candidate in candidates if not candidate.offer_exists),
+        "blocked_execution_reasons_summary": tuple(
             sorted(
                 {
                     blocker.code
@@ -196,15 +193,7 @@ def _execution_observation(
                     for blocker in candidate.blockers
                 }
             )
-        )
-
-    return {
-        "execution_candidate_count": len(candidates),
-        "execution_selectable_count": sum(1 for candidate in candidates if candidate.is_selectable),
-        "attempted_template_keys": tuple(candidate.template_key for candidate in candidates),
-        "offer_present_template_keys": tuple(candidate.template_key for candidate in candidates if candidate.offer_exists),
-        "missing_offer_template_keys": tuple(candidate.template_key for candidate in candidates if not candidate.offer_exists),
-        "blocked_execution_reasons_summary": blocked_execution_reasons_summary,
+        ),
         "final_execution_refusal_reason": final_execution_refusal_reason,
         "publishability_score": probe_candidate.quality.publishability_score if probe_candidate is not None else None,
         "template_binding_score": probe_candidate.quality.template_binding_score if probe_candidate is not None else None,
@@ -212,7 +201,7 @@ def _execution_observation(
         "price_integrity_score": probe_candidate.quality.price_integrity_score if probe_candidate is not None else None,
         "retrievability_score": probe_candidate.quality.retrievability_score if probe_candidate is not None else None,
     }
-    
+
 
 def _build_fixture_audit(
     result: PublishableMatchResult,
@@ -289,7 +278,6 @@ def _apply_notifier_acks(
 ) -> list[PublishedArtifactRecord]:
     if not acked_records:
         return records
-
     acked = set(acked_records)
     updated: list[PublishedArtifactRecord] = []
     for record in records:
@@ -355,15 +343,15 @@ def run_vnext_cycle(
 
     board_snapshot = build_board_snapshot(tuple(selections))
     pipeline_snapshot = build_publishable_pipeline(board_snapshot, tuple(executions))
+    pipeline_results = _apply_published_odds_guard(tuple(pipeline_snapshot.results))
 
     publishable_results = tuple(
-        result for result in pipeline_snapshot.results if result.publish_status == "PUBLISH"
+        result for result in pipeline_results if result.publish_status == "PUBLISH"
     )
     computed_publish_count = len(publishable_results)
     deduped_results = []
     deduped_count = 0
     publication_records: list[PublishedArtifactRecord] = []
-
     for result in publishable_results:
         duplicate_origin = deduper.duplicate_origin(result, timestamp)
         if duplicate_origin is not None:
@@ -379,7 +367,6 @@ def run_vnext_cycle(
                 )
             )
             continue
-
         deduper.mark_seen(result, timestamp)
         deduped_results.append(result)
         publication_records.append(
@@ -419,7 +406,6 @@ def run_vnext_cycle(
         unsent_shadow_count=unsent_shadow_count,
         notifier_attempt_count=notifier_attempt_count,
     )
-
     selection_by_fixture = {
         selection.translation_result.posterior_result.prior_result.fixture_id: selection
         for selection in selections
@@ -434,7 +420,7 @@ def run_vnext_cycle(
             selection_result=selection_by_fixture.get(result.fixture_id),
             execution_result=execution_by_fixture.get(result.fixture_id),
         )
-        for result in pipeline_snapshot.results
+        for result in pipeline_results
     )
 
     if ops_store is not None:
@@ -454,7 +440,7 @@ def run_vnext_cycle(
         unsent_shadow_count=counters.unsent_shadow_count,
         notifier_attempt_count=counters.notifier_attempt_count,
         payloads=tuple(payloads),
-        refusal_summaries=_collect_refusals(pipeline_snapshot.results),
+        refusal_summaries=_collect_refusals(pipeline_results),
         fixture_audits=fixture_audits,
         publication_records=tuple(publication_records),
         ops_flags=tuple(sorted(set(ops_flags))),
@@ -533,4 +519,3 @@ def run_vnext_cycle(
         ops_flags=tuple(sorted(set(ops_flags))),
         notifier_mode=notifier_mode,
     )
-    
