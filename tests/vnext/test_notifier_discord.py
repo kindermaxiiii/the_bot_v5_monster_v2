@@ -48,7 +48,16 @@ def test_discord_vnext_notifier_returns_explicit_ack_result() -> None:
     assert sent_messages == [
         (
             "https://discord.example/webhook",
-            "[WATCHLIST]\nMatch 999 | TEAM_TOTAL Team Total Away Under Core | Book 1 1.87 | HIGH",
+            "\n".join(
+                [
+                    "👀 WATCHLIST LIVE",
+                    "",
+                    "🏟️ Premier Test",
+                    "⚔️ Match 999",
+                    "🎯 Total extérieur - Under 1.5",
+                    "💸 Book 1 • 1.87 • HIGH",
+                ]
+            ),
         )
     ]
 

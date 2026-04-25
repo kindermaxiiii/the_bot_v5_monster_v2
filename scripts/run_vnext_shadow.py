@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from dataclasses import dataclass
@@ -71,6 +70,18 @@ def _target_text(path: str) -> str:
 
 def _is_path_failure(preflight: RunPreflight) -> bool:
     return any(error.endswith("_unwritable") for error in preflight.errors)
+
+
+def _resolve_discord_notifier_kwargs(args: argparse.Namespace) -> dict[str, str | None]:
+    cli_webhook = str(args.discord_webhook_url or "").strip()
+    elite_webhook = str(settings.discord_webhook_real or "").strip()
+    watchlist_webhook = str(settings.discord_webhook_doc or "").strip()
+
+    return {
+        "discord_webhook_url": cli_webhook,
+        "discord_elite_webhook_url": elite_webhook or None,
+        "discord_watchlist_webhook_url": watchlist_webhook or None,
+    }
 
 
 def _build_preflight(
@@ -357,7 +368,7 @@ def main() -> int:
 
     notifier_binding = build_vnext_notifier(
         args.notifier,  # type: ignore[arg-type]
-        discord_webhook_url=args.discord_webhook_url,
+        **_resolve_discord_notifier_kwargs(args),
     )
 
     config = VnextRuntimeConfig(
@@ -490,7 +501,6 @@ def main() -> int:
         ops_flags=sorted_ops_flags,
     )
 
-    # Publish latest successful export to the live path and validate it.
     if final_status.startswith("success"):
         publish_target = os.environ.get("VNEXT_LIVE_EXPORT_PATH", "")
         if publish_target:
