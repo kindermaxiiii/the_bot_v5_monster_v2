@@ -23,6 +23,12 @@ def _conflict_score(primary: float, opposite: float) -> float:
     return _clip(min(primary, opposite) - abs(primary - opposite) + 0.12)
 
 
+def _quality_tailwind(posterior_result: ScenarioPosteriorResult) -> float:
+    reliability = posterior_result.posterior_reliability.posterior_reliability_score
+    live_quality = posterior_result.posterior_reliability.live_snapshot_quality_score
+    return _clip((reliability * 0.58) + (live_quality * 0.42))
+
+
 def _build_support_breakdown(
     *,
     posterior_result: ScenarioPosteriorResult,
@@ -52,53 +58,56 @@ def _base_scores(posterior_result: ScenarioPosteriorResult) -> dict[str, float]:
     scenario_scores = _scenario_map(posterior_result)
     live = posterior_result.live_context
     subscores = posterior_result.prior_result.subscores
+    quality_tailwind = _quality_tailwind(posterior_result)
+
     home_attack_live = _clip((live.threat.home_threat_raw * 0.62) + (live.pressure.home_pressure_raw * 0.38))
     away_attack_live = _clip((live.threat.away_threat_raw * 0.62) + (live.pressure.away_pressure_raw * 0.38))
     home_defense_live = _clip(((1.0 - live.threat.away_threat_raw) * 0.68) + ((1.0 - live.pressure.away_pressure_raw) * 0.32))
     away_defense_live = _clip(((1.0 - live.threat.home_threat_raw) * 0.68) + ((1.0 - live.pressure.home_pressure_raw) * 0.32))
 
     home_attack_support = _clip(
-        (scenario_scores.get("HOME_ATTACKING_BIAS", 0.0) * 0.50)
-        + (scenario_scores.get("HOME_CONTROL", 0.0) * 0.18)
-        + (home_attack_live * 0.22)
-        + (max(live.threat.threat_edge, 0.0) * 0.10)
+        (scenario_scores.get("HOME_ATTACKING_BIAS", 0.0) * 0.48)
+        + (scenario_scores.get("HOME_CONTROL", 0.0) * 0.17)
+        + (home_attack_live * 0.24)
+        + (max(live.threat.threat_edge, 0.0) * 0.11)
     )
     away_attack_support = _clip(
-        (scenario_scores.get("AWAY_ATTACKING_BIAS", 0.0) * 0.50)
-        + (scenario_scores.get("AWAY_CONTROL", 0.0) * 0.18)
-        + (away_attack_live * 0.22)
-        + (max(-live.threat.threat_edge, 0.0) * 0.10)
+        (scenario_scores.get("AWAY_ATTACKING_BIAS", 0.0) * 0.48)
+        + (scenario_scores.get("AWAY_CONTROL", 0.0) * 0.17)
+        + (away_attack_live * 0.24)
+        + (max(-live.threat.threat_edge, 0.0) * 0.11)
     )
     home_defense_support = _clip(
-        (scenario_scores.get("HOME_DEFENSIVE_HOLD_BIAS", 0.0) * 0.48)
-        + (scenario_scores.get("HOME_CONTROL", 0.0) * 0.14)
+        (scenario_scores.get("HOME_DEFENSIVE_HOLD_BIAS", 0.0) * 0.46)
+        + (scenario_scores.get("HOME_CONTROL", 0.0) * 0.12)
         + (home_defense_live * 0.24)
-        + (subscores.clean_sheet_home_affinity * 0.14)
+        + (subscores.clean_sheet_home_affinity * 0.18)
     )
     away_defense_support = _clip(
-        (scenario_scores.get("AWAY_DEFENSIVE_HOLD_BIAS", 0.0) * 0.48)
-        + (scenario_scores.get("AWAY_CONTROL", 0.0) * 0.14)
+        (scenario_scores.get("AWAY_DEFENSIVE_HOLD_BIAS", 0.0) * 0.46)
+        + (scenario_scores.get("AWAY_CONTROL", 0.0) * 0.12)
         + (away_defense_live * 0.24)
-        + (subscores.clean_sheet_away_affinity * 0.14)
+        + (subscores.clean_sheet_away_affinity * 0.18)
     )
     open_support = _clip(
-        (scenario_scores.get("OPEN_BALANCED", 0.0) * 0.32)
+        (scenario_scores.get("OPEN_BALANCED", 0.0) * 0.30)
         + (scenario_scores.get("DUAL_SCORING_BIAS", 0.0) * 0.24)
-        + (home_attack_support * 0.18)
-        + (away_attack_support * 0.18)
+        + (home_attack_support * 0.19)
+        + (away_attack_support * 0.19)
         + (subscores.over_2_5_affinity * 0.08)
     )
     cagey_support = _clip(
-        (scenario_scores.get("CAGEY_BALANCED", 0.0) * 0.34)
-        + (home_defense_support * 0.20)
-        + (away_defense_support * 0.20)
+        (scenario_scores.get("CAGEY_BALANCED", 0.0) * 0.32)
+        + (home_defense_support * 0.22)
+        + (away_defense_support * 0.22)
         + (subscores.under_2_5_affinity * 0.16)
-        + ((1.0 - ((live.threat.home_threat_raw + live.threat.away_threat_raw) / 2.0)) * 0.10)
+        + ((1.0 - ((live.threat.home_threat_raw + live.threat.away_threat_raw) / 2.0)) * 0.04)
+        + (max(0.0, quality_tailwind - 0.55) * 0.04)
     )
     both_teams_attack_support = _clip(
-        (min(home_attack_support, away_attack_support) * 0.68)
+        (min(home_attack_support, away_attack_support) * 0.66)
         + (scenario_scores.get("DUAL_SCORING_BIAS", 0.0) * 0.20)
-        + (subscores.btts_affinity * 0.12)
+        + (subscores.btts_affinity * 0.14)
     )
 
     return {
@@ -177,12 +186,14 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
     live = posterior_result.live_context
     scores = _scenario_map(posterior_result)
     base = _base_scores(posterior_result)
+    quality_tailwind = _quality_tailwind(posterior_result)
     candidates: list[MarketCandidate] = []
 
-    over_support = base["open_support"]
-    under_support = base["cagey_support"]
-    if max(over_support, under_support) >= 0.42:
-        if over_support >= 0.42:
+    over_support = _clip(base["open_support"] - 0.01)
+    under_support = _clip(base["cagey_support"] + max(0.0, quality_tailwind - 0.58) * 0.06)
+
+    if max(over_support, under_support) >= 0.40:
+        if over_support >= 0.41:
             candidates.append(
                 _candidate(
                     posterior_result=posterior_result,
@@ -197,7 +208,7 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                     supporting_signals=("open_support", "attack_pressure_convergence"),
                 )
             )
-        if under_support >= 0.42:
+        if under_support >= 0.39:
             candidates.append(
                 _candidate(
                     posterior_result=posterior_result,
@@ -213,9 +224,17 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                 )
             )
 
-    btts_yes_support = _clip((base["both_teams_attack_support"] * 0.62) + (scores.get("OPEN_BALANCED", 0.0) * 0.20) + (scores.get("DUAL_SCORING_BIAS", 0.0) * 0.18))
-    btts_no_support = _clip((max(base["home_defense_support"], base["away_defense_support"]) * 0.46) + (under_support * 0.28) + ((1.0 - base["both_teams_attack_support"]) * 0.26))
-    if max(btts_yes_support, btts_no_support) >= 0.40:
+    btts_yes_support = _clip(
+        (base["both_teams_attack_support"] * 0.62)
+        + (scores.get("OPEN_BALANCED", 0.0) * 0.20)
+        + (scores.get("DUAL_SCORING_BIAS", 0.0) * 0.18)
+    )
+    btts_no_support = _clip(
+        (max(base["home_defense_support"], base["away_defense_support"]) * 0.48)
+        + (under_support * 0.30)
+        + ((1.0 - base["both_teams_attack_support"]) * 0.22)
+    )
+    if max(btts_yes_support, btts_no_support) >= 0.39:
         if btts_yes_support >= 0.40:
             candidates.append(
                 _candidate(
@@ -231,7 +250,7 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                     supporting_signals=("dual_attack_support", "both_sides_threat"),
                 )
             )
-        if btts_no_support >= 0.40:
+        if btts_no_support >= 0.39:
             candidates.append(
                 _candidate(
                     posterior_result=posterior_result,
@@ -247,10 +266,30 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                 )
             )
 
-    home_over_support = _clip((base["home_attack_support"] * 0.60) + (scores.get("HOME_CONTROL", 0.0) * 0.18) + (scores.get("OPEN_BALANCED", 0.0) * 0.10) + (live.threat.home_threat_raw * 0.12))
-    away_over_support = _clip((base["away_attack_support"] * 0.60) + (scores.get("AWAY_CONTROL", 0.0) * 0.18) + (scores.get("OPEN_BALANCED", 0.0) * 0.10) + (live.threat.away_threat_raw * 0.12))
-    home_under_support = _clip((base["away_defense_support"] * 0.46) + (scores.get("AWAY_CONTROL", 0.0) * 0.18) + (under_support * 0.20) + ((1.0 - base["home_attack_support"]) * 0.16))
-    away_under_support = _clip((base["home_defense_support"] * 0.46) + (scores.get("HOME_CONTROL", 0.0) * 0.18) + (under_support * 0.20) + ((1.0 - base["away_attack_support"]) * 0.16))
+    home_over_support = _clip(
+        (base["home_attack_support"] * 0.60)
+        + (scores.get("HOME_CONTROL", 0.0) * 0.18)
+        + (scores.get("OPEN_BALANCED", 0.0) * 0.10)
+        + (live.threat.home_threat_raw * 0.12)
+    )
+    away_over_support = _clip(
+        (base["away_attack_support"] * 0.60)
+        + (scores.get("AWAY_CONTROL", 0.0) * 0.18)
+        + (scores.get("OPEN_BALANCED", 0.0) * 0.10)
+        + (live.threat.away_threat_raw * 0.12)
+    )
+    home_under_support = _clip(
+        (base["away_defense_support"] * 0.50)
+        + (scores.get("AWAY_CONTROL", 0.0) * 0.14)
+        + (under_support * 0.20)
+        + ((1.0 - base["home_attack_support"]) * 0.16)
+    )
+    away_under_support = _clip(
+        (base["home_defense_support"] * 0.50)
+        + (scores.get("HOME_CONTROL", 0.0) * 0.14)
+        + (under_support * 0.20)
+        + ((1.0 - base["away_attack_support"]) * 0.16)
+    )
 
     if home_over_support >= 0.40:
         candidates.append(
@@ -282,7 +321,7 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                 supporting_signals=("away_attack_support", "away_threat_edge"),
             )
         )
-    if home_under_support >= 0.40:
+    if home_under_support >= 0.38:
         candidates.append(
             _candidate(
                 posterior_result=posterior_result,
@@ -297,7 +336,7 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
                 supporting_signals=("away_defensive_hold", "suppressed_home_attack"),
             )
         )
-    if away_under_support >= 0.40:
+    if away_under_support >= 0.38:
         candidates.append(
             _candidate(
                 posterior_result=posterior_result,
@@ -313,6 +352,7 @@ def translate_market_candidates(posterior_result: ScenarioPosteriorResult) -> Ma
             )
         )
 
+    # RESULT reste volontairement conservateur pour ne pas casser les hard-block tests.
     if scores.get("HOME_CONTROL", 0.0) >= 0.52 or scores.get("HOME_ATTACKING_BIAS", 0.0) >= 0.58:
         candidates.append(
             _candidate(

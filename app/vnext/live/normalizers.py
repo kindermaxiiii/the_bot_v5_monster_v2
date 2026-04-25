@@ -33,26 +33,56 @@ def _clip(value: float, *, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
+def _present(value: Any) -> float:
+    return 0.0 if value in (None, "", "null") else 1.0
+
+
+def _any_present(*values: Any) -> float:
+    return 1.0 if any(value not in (None, "", "null") for value in values) else 0.0
+
+
 def normalize_live_snapshot(
     fixture_row: dict[str, Any],
     stats_row: dict[str, Any] | None = None,
 ) -> LiveSnapshot:
     stats_row = stats_row or {}
-    completeness = mean(
+
+    fixture_core_completeness = mean(
         [
-            1.0 if _as_int(fixture_row.get("fixture_id")) is not None else 0.0,
-            1.0 if _as_int(fixture_row.get("home_team_id")) is not None else 0.0,
-            1.0 if _as_int(fixture_row.get("away_team_id")) is not None else 0.0,
-            1.0 if _as_int(fixture_row.get("minute")) is not None else 0.0,
-            1.0 if _as_int(fixture_row.get("home_goals")) is not None else 0.0,
-            1.0 if _as_int(fixture_row.get("away_goals")) is not None else 0.0,
-            1.0 if _as_int(stats_row.get("home_shots_on")) is not None else 0.0,
-            1.0 if _as_int(stats_row.get("away_shots_on")) is not None else 0.0,
-            1.0 if _as_int(stats_row.get("home_dangerous_attacks")) is not None else 0.0,
-            1.0 if _as_int(stats_row.get("away_dangerous_attacks")) is not None else 0.0,
+            _present(fixture_row.get("fixture_id")),
+            _present(fixture_row.get("home_team_id")),
+            _present(fixture_row.get("away_team_id")),
+            _present(fixture_row.get("minute")),
+            _present(fixture_row.get("status")),
+            _present(fixture_row.get("home_goals")),
+            _present(fixture_row.get("away_goals")),
         ]
     )
-    quality_score = _clip(completeness)
+
+    discipline_completeness = mean(
+        [
+            _any_present(fixture_row.get("home_red"), stats_row.get("home_red_cards")),
+            _any_present(fixture_row.get("away_red"), stats_row.get("away_red_cards")),
+        ]
+    )
+
+    stats_completeness = mean(
+        [
+            _any_present(stats_row.get("home_shots_on"), stats_row.get("home_shots_total")),
+            _any_present(stats_row.get("away_shots_on"), stats_row.get("away_shots_total")),
+            _any_present(stats_row.get("home_dangerous_attacks"), stats_row.get("home_attacks")),
+            _any_present(stats_row.get("away_dangerous_attacks"), stats_row.get("away_attacks")),
+            _any_present(stats_row.get("home_xg"), stats_row.get("home_possession"), stats_row.get("home_corners")),
+            _any_present(stats_row.get("away_xg"), stats_row.get("away_possession"), stats_row.get("away_corners")),
+        ]
+    )
+
+    quality_score = _clip(
+        (fixture_core_completeness * 0.72)
+        + (stats_completeness * 0.22)
+        + (discipline_completeness * 0.06)
+    )
+
     return LiveSnapshot(
         fixture_id=_as_int(fixture_row.get("fixture_id"), default=0) or 0,
         competition_id=_as_int(fixture_row.get("league_id"), default=0) or 0,
@@ -66,8 +96,16 @@ def normalize_live_snapshot(
         away_team_name=_as_str(fixture_row.get("away_team_name"), default="Away"),
         home_goals=_as_int(fixture_row.get("home_goals"), default=0) or 0,
         away_goals=_as_int(fixture_row.get("away_goals"), default=0) or 0,
-        home_red_cards=_as_int(fixture_row.get("home_red"), default=_as_int(stats_row.get("home_red_cards"), default=0)) or 0,
-        away_red_cards=_as_int(fixture_row.get("away_red"), default=_as_int(stats_row.get("away_red_cards"), default=0)) or 0,
+        home_red_cards=_as_int(
+            fixture_row.get("home_red"),
+            default=_as_int(stats_row.get("home_red_cards"), default=0),
+        )
+        or 0,
+        away_red_cards=_as_int(
+            fixture_row.get("away_red"),
+            default=_as_int(stats_row.get("away_red_cards"), default=0),
+        )
+        or 0,
         home_shots_total=_as_int(stats_row.get("home_shots_total")),
         away_shots_total=_as_int(stats_row.get("away_shots_total")),
         home_shots_on=_as_int(stats_row.get("home_shots_on")),
@@ -89,3 +127,4 @@ def normalize_live_snapshot(
             "stats_row": stats_row,
         },
     )
+    

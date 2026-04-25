@@ -50,6 +50,32 @@ def _status_shift(status: str, *, event_strength: float) -> float:
     return 0.0
 
 
+def _reliability_tailwind(
+    context: LiveContextPack,
+    *,
+    live_snapshot_quality_score: float,
+    event_clarity_score: float,
+    state_coherence_score: float,
+) -> float:
+    bonus = 0.0
+
+    if live_snapshot_quality_score >= 0.70:
+        bonus += 0.02
+    if state_coherence_score >= 0.78:
+        bonus += 0.02
+
+    # Late, coherent, non-chaotic states should not be over-penalized
+    # just because no big break event happened recently.
+    if (
+        context.state.time_band == "LATE"
+        and state_coherence_score >= 0.78
+        and event_clarity_score <= 0.35
+    ):
+        bonus += 0.02
+
+    return min(bonus, 0.05)
+
+
 def build_posterior_reliability(
     prior_result: ScenarioPriorResult,
     context: LiveContextPack,
@@ -58,12 +84,22 @@ def build_posterior_reliability(
     live_snapshot_quality_score = context.current_snapshot.live_snapshot_quality_score
     event_clarity_score = context.break_events.event_clarity_score
     state_coherence_score = context.state.state_coherence_score
-    posterior_reliability_score = _clip(
-        (prior_reliability_score * 0.45)
-        + (live_snapshot_quality_score * 0.30)
-        + (event_clarity_score * 0.15)
-        + (state_coherence_score * 0.10)
+
+    tailwind = _reliability_tailwind(
+        context,
+        live_snapshot_quality_score=live_snapshot_quality_score,
+        event_clarity_score=event_clarity_score,
+        state_coherence_score=state_coherence_score,
     )
+
+    posterior_reliability_score = _clip(
+        (prior_reliability_score * 0.42)
+        + (live_snapshot_quality_score * 0.30)
+        + (event_clarity_score * 0.08)
+        + (state_coherence_score * 0.20)
+        + tailwind
+    )
+
     return PosteriorReliabilityBreakdown(
         prior_reliability_score=round(prior_reliability_score, 4),
         live_snapshot_quality_score=round(live_snapshot_quality_score, 4),
@@ -128,3 +164,4 @@ def update_scenario_posterior(
         ),
         notes=(),
     )
+    

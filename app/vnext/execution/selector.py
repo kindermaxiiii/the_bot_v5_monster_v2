@@ -41,6 +41,7 @@ def _offer_score(offer: MarketOffer) -> float:
             freshness = 0.4
         else:
             freshness = 0.2
+
     if offer.odds_decimal <= 1.01:
         integrity = 0.0
     elif offer.odds_decimal <= 1.10:
@@ -51,13 +52,17 @@ def _offer_score(offer: MarketOffer) -> float:
         integrity = 0.6
     else:
         integrity = 0.3
+
     return _clip((freshness * 0.55) + (integrity * 0.45))
 
 
 def _bound_offer_group(offer_group: MarketOfferGroup) -> MarketOfferGroup:
     if offer_group.bound_line is None:
         return offer_group
-    bound_offers = tuple(offer for offer in offer_group.offers if offer.line == offer_group.bound_line)
+
+    bound_offers = tuple(
+        offer for offer in offer_group.offers if offer.line == offer_group.bound_line
+    )
     return replace(
         offer_group,
         offers=bound_offers,
@@ -75,6 +80,7 @@ def _build_candidate(template: LineTemplate, offers: tuple[MarketOffer, ...]) ->
     is_blocked = bool(blockers)
     is_selectable = bound_group.offer_exists and not is_blocked
     selection_score = _selection_score(quality) if is_selectable else 0.0
+
     return ExecutionCandidate(
         template_key=template.key,
         market_family=template.family,
@@ -98,16 +104,40 @@ def _build_candidate(template: LineTemplate, offers: tuple[MarketOffer, ...]) ->
     )
 
 
+def _candidate_rank_key(
+    candidate: ExecutionCandidate,
+    *,
+    preferred_template_key: str | None,
+) -> tuple[float, float, float, float, float, float, float]:
+    preferred_bonus = 1.0 if preferred_template_key and candidate.template_key == preferred_template_key else 0.0
+    exact_bonus = 1.0 if candidate.template_binding_status == "EXACT" else 0.5 if candidate.template_binding_status == "RELAXED" else 0.0
+
+    return (
+        preferred_bonus,
+        exact_bonus,
+        candidate.selection_score,
+        candidate.quality.publishability_score,
+        candidate.quality.retrievability_score,
+        candidate.quality.bookmaker_diversity_score,
+        candidate.quality.price_integrity_score,
+    )
+
+
 def build_executable_market_selection(
     selection_result: MatchMarketSelectionResult,
     offers: tuple[MarketOffer, ...],
 ) -> ExecutableMarketSelectionResult:
-    template_keys = []
+    template_keys: list[str] = []
+    preferred_template_key: str | None = None
+
     if selection_result.best_candidate is not None:
-        template_keys.append(selection_result.best_candidate.candidate.line_template.key)
+        preferred_template_key = selection_result.best_candidate.candidate.line_template.key
+        template_keys.append(preferred_template_key)
+
     for candidate in selection_result.translation_result.candidates:
-        if candidate.line_template.key not in template_keys:
-            template_keys.append(candidate.line_template.key)
+        template_key = candidate.line_template.key
+        if template_key not in template_keys:
+            template_keys.append(template_key)
 
     candidates: list[ExecutionCandidate] = []
     for template_key in template_keys:
@@ -119,6 +149,7 @@ def build_executable_market_selection(
         reason = "no_offer_found"
         if any(candidate.offer_exists for candidate in candidates):
             reason = "publishability_low"
+
         return ExecutableMarketSelectionResult(
             fixture_id=selection_result.translation_result.posterior_result.prior_result.fixture_id,
             template_key=template_keys[0] if template_keys else "UNKNOWN",
@@ -128,8 +159,16 @@ def build_executable_market_selection(
             no_executable_vehicle_reason=reason,
         )
 
-    ranked = sorted(selectable, key=lambda candidate: (candidate.selection_score, candidate.quality.publishability_score), reverse=True)
+    ranked = sorted(
+        selectable,
+        key=lambda candidate: _candidate_rank_key(
+            candidate,
+            preferred_template_key=preferred_template_key,
+        ),
+        reverse=True,
+    )
     best = ranked[0]
+
     return ExecutableMarketSelectionResult(
         fixture_id=selection_result.translation_result.posterior_result.prior_result.fixture_id,
         template_key=best.template_key,

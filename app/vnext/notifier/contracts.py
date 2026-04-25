@@ -13,10 +13,23 @@ NotifierMode = Literal["none", "aggregate", "explicit_ack"]
 class NotifierAckRecord:
     fixture_id: int
     public_status: str
-    template_key: str | None
-    bookmaker_id: int | None
-    line: float | None
-    odds_decimal: float | None
+    template_key: str | None = None
+    bookmaker_id: int | None = None
+    line: float | None = None
+    odds_decimal: float | None = None
+
+    def identity_key(self) -> tuple[int, str]:
+        # Discord ne connaît pas forcément tous les champs marché/bookmaker.
+        # On fait donc matcher l'ack sur l'identité métier minimale et stable.
+        return (self.fixture_id, self.public_status)
+
+    def __hash__(self) -> int:
+        return hash(self.identity_key())
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, NotifierAckRecord):
+            return NotImplemented
+        return self.identity_key() == other.identity_key()
 
 
 @dataclass(slots=True, frozen=True)
@@ -130,3 +143,5 @@ def send_with_notifier(
         adapted.send(bundles),
         default_attempt_count=len(bundles),
     )
+
+    

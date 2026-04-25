@@ -5,7 +5,7 @@ from typing import Callable
 
 from app.clients.discord import DiscordSendResult, discord_client
 from app.config import settings
-from app.vnext.notifier.contracts import NotifierSendResult, VnextNotifier
+from app.vnext.notifier.contracts import NotifierAckRecord, NotifierSendResult, VnextNotifier
 from app.vnext.notifier.discord_format import format_bundle
 from app.vnext.publication.models import PublicMessageBundle
 
@@ -53,13 +53,25 @@ class DiscordVnextNotifier(VnextNotifier):
             return self.watchlist_webhook_url
         return ""
 
+    def _build_ack_records(self, bundle: PublicMessageBundle) -> tuple[NotifierAckRecord, ...]:
+        return tuple(
+            NotifierAckRecord(
+                fixture_id=payload.fixture_id,
+                public_status=payload.public_status,
+            )
+            for payload in bundle.payloads
+        )
+
     def send(self, bundles: tuple[PublicMessageBundle, ...]) -> NotifierSendResult:
         attempted_count = 0
         notified_count = 0
+        acked_records: list[NotifierAckRecord] = []
         messages = prepare_discord_messages(bundles)
 
         for bundle, message in zip(bundles, messages):
             webhook_url = self._resolve_webhook_url(bundle)
+            bundle_payload_count = len(bundle.payloads)
+
             if not webhook_url:
                 logger.warning(
                     "vnext_discord_notifier_missing_webhook publish_channel=%s",
@@ -67,7 +79,7 @@ class DiscordVnextNotifier(VnextNotifier):
                 )
                 continue
 
-            attempted_count += 1
+            attempted_count += bundle_payload_count
             try:
                 result = self.sender(webhook_url, message)
             except Exception as exc:
@@ -79,11 +91,12 @@ class DiscordVnextNotifier(VnextNotifier):
                 continue
 
             if result.ok:
-                notified_count += 1
+                notified_count += bundle_payload_count
+                acked_records.extend(self._build_ack_records(bundle))
 
         return NotifierSendResult(
             attempted_count=attempted_count,
             notified_count=notified_count,
-            acked_records=(),
-            mode="aggregate",
+            acked_records=tuple(acked_records),
+            mode="explicit_ack",
         )
