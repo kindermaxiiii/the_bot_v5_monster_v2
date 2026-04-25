@@ -5,11 +5,10 @@ from datetime import datetime
 from app.vnext.board.models import BoardEntry, BoardSnapshot
 from app.vnext.execution.models import MarketOffer
 from app.vnext.execution.selector import build_executable_market_selection
-from app.vnext.governance.models import InternalMatchStatus
-from app.vnext.notifier.discord_vnext import prepare_discord_messages
 from app.vnext.pipeline.builder import build_publishable_pipeline
 from app.vnext.publication.builder import build_publication_bundles
 from app.vnext.selection.match_selector import build_match_market_selection_result
+from app.vnext.notifier.discord_vnext import prepare_discord_messages
 from tests.vnext.live_factories import build_reference_posterior_result
 
 
@@ -77,5 +76,13 @@ def test_elite_and_watchlist_distinct_rendering() -> None:
 
     assert elite_messages
     assert watchlist_messages
-    assert elite_messages[0].startswith("[ELITE]")
-    assert watchlist_messages[0].startswith("[WATCHLIST]")
+
+    assert elite_messages[0].startswith("🔥 ELITE LIVE")
+    assert watchlist_messages[0].startswith("👀 WATCHLIST LIVE")
+
+    assert posterior.prior_result.competition_name in elite_messages[0]
+    assert posterior.prior_result.home_team_name in elite_messages[0]
+    assert posterior.prior_result.away_team_name in elite_messages[0]
+
+    assert "🎯" in elite_messages[0]
+    assert "💸" in elite_messages[0]

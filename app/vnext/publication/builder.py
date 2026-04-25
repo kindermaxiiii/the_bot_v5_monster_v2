@@ -2,31 +2,25 @@ from __future__ import annotations
 
 from app.vnext.pipeline.models import PipelineSnapshot, PublishableMatchResult
 from app.vnext.publication.formatter import build_public_payload
-from app.vnext.publication.models import PublicMessageBundle
+from app.vnext.publication.models import PublicMatchPayload, PublicMessageBundle
 
 
-def _build_bundles(payloads: tuple) -> tuple[PublicMessageBundle, ...]:
+def _bundle_for_payload(payload: PublicMatchPayload) -> PublicMessageBundle:
+    return PublicMessageBundle(
+        publish_channel=payload.publish_channel,
+        payloads=(payload,),
+    )
+
+
+def _build_bundles(payloads: tuple[PublicMatchPayload, ...]) -> tuple[PublicMessageBundle, ...]:
     if not payloads:
         return ()
 
-    bundles_by_channel: dict[str, list] = {}
-    for payload in payloads:
-        bundles_by_channel.setdefault(payload.publish_channel, []).append(payload)
-
-    bundles = []
-    for channel, channel_payloads in bundles_by_channel.items():
-        bundles.append(
-            PublicMessageBundle(
-                publish_channel=channel,  # type: ignore[arg-type]
-                payloads=tuple(channel_payloads),
-            )
-        )
-
-    return tuple(bundles)
+    return tuple(_bundle_for_payload(payload) for payload in payloads)
 
 
 def build_publication_bundles(snapshot: PipelineSnapshot) -> tuple[PublicMessageBundle, ...]:
-    payloads = []
+    payloads: list[PublicMatchPayload] = []
     for result in snapshot.results:
         payload = build_public_payload(result)
         if payload is not None:
@@ -37,7 +31,7 @@ def build_publication_bundles(snapshot: PipelineSnapshot) -> tuple[PublicMessage
 def build_publication_bundles_from_results(
     results: tuple[PublishableMatchResult, ...],
 ) -> tuple[PublicMessageBundle, ...]:
-    payloads = []
+    payloads: list[PublicMatchPayload] = []
     for result in results:
         payload = build_public_payload(result)
         if payload is not None:
