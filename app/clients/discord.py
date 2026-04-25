@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Any
 
 try:
     import requests
@@ -12,6 +13,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
+DiscordWebhookPayload = dict[str, Any]
+
+
 @dataclass(slots=True, frozen=True)
 class DiscordSendResult:
     ok: bool
@@ -20,24 +24,83 @@ class DiscordSendResult:
     response_body: str = ""
 
 
-def _normalize_text(value: str | None) -> str:
+def _normalize_text(value: object | None) -> str:
     return str(value or "").strip()
 
 
-def _build_payload(content: str) -> dict[str, object]:
-    return {
-        "content": content,
-        "allowed_mentions": {"parse": []},
-    }
+def _strip_nones(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            if item is None:
+                continue
+            cleaned_item = _strip_nones(item)
+            if cleaned_item is None:
+                continue
+            cleaned[key] = cleaned_item
+        return cleaned
+
+    if isinstance(value, list):
+        cleaned_list = []
+        for item in value:
+            cleaned_item = _strip_nones(item)
+            if cleaned_item is None:
+                continue
+            cleaned_list.append(cleaned_item)
+        return cleaned_list
+
+    return value
+
+
+def _coerce_payload(message: str | DiscordWebhookPayload) -> DiscordWebhookPayload:
+    if isinstance(message, dict):
+        payload = dict(message)
+    else:
+        payload = {"content": _normalize_text(message)}
+
+    payload.setdefault("allowed_mentions", {"parse": []})
+
+    content = payload.get("content")
+    if content is not None:
+        payload["content"] = _normalize_text(content)
+
+    embeds = payload.get("embeds")
+    if embeds is None:
+        payload["embeds"] = []
+    elif not isinstance(embeds, list):
+        payload["embeds"] = [embeds]
+
+    payload = _strip_nones(payload)
+
+    has_content = bool(_normalize_text(payload.get("content")))
+    has_embeds = bool(payload.get("embeds"))
+
+    if not has_content and not has_embeds:
+        payload["content"] = ""
+
+    return payload
+
+
+def _validate_payload(payload: DiscordWebhookPayload) -> str | None:
+    has_content = bool(_normalize_text(payload.get("content")))
+    has_embeds = bool(payload.get("embeds"))
+
+    if not has_content and not has_embeds:
+        return "empty_message"
+
+    embeds = payload.get("embeds", [])
+    if isinstance(embeds, list) and len(embeds) > 10:
+        return "too_many_embeds"
+
+    return None
 
 
 def _send_with_requests(
     webhook_url: str,
-    content: str,
+    payload: DiscordWebhookPayload,
     *,
     timeout_seconds: float,
 ) -> DiscordSendResult:
-    payload = _build_payload(content)
     try:
         response = requests.post(  # type: ignore[union-attr]
             webhook_url,
@@ -55,7 +118,7 @@ def _send_with_requests(
             error="" if status_code in (200, 204) else (response_body or response.reason or "http_error"),
             response_body=response_body,
         )
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         return DiscordSendResult(
             ok=False,
             status_code=0,
@@ -66,12 +129,11 @@ def _send_with_requests(
 
 def _send_with_urllib(
     webhook_url: str,
-    content: str,
+    payload: DiscordWebhookPayload,
     *,
     timeout_seconds: float,
 ) -> DiscordSendResult:
-    payload = _build_payload(content)
-    body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     request = Request(
         url=webhook_url,
@@ -113,7 +175,7 @@ def _send_with_urllib(
             error=str(exc.reason),
             response_body="",
         )
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         return DiscordSendResult(
             ok=False,
             status_code=0,
@@ -124,13 +186,11 @@ def _send_with_urllib(
 
 def send_discord_message(
     webhook_url: str,
-    content: str,
+    message: str | DiscordWebhookPayload,
     *,
     timeout_seconds: float = 10.0,
 ) -> DiscordSendResult:
     url = _normalize_text(webhook_url)
-    message = _normalize_text(content)
-
     if not url:
         return DiscordSendResult(
             ok=False,
@@ -138,22 +198,26 @@ def send_discord_message(
             error="missing_webhook_url",
         )
 
-    if not message:
+    payload = _coerce_payload(message)
+    validation_error = _validate_payload(payload)
+    if validation_error is not None:
         return DiscordSendResult(
             ok=False,
             status_code=0,
-            error="empty_message",
+            error=validation_error,
         )
 
     if requests is not None:
         return _send_with_requests(
             url,
-            message,
+            payload,
             timeout_seconds=timeout_seconds,
         )
 
     return _send_with_urllib(
         url,
-        message,
+        payload,
         timeout_seconds=timeout_seconds,
     )
+
+    

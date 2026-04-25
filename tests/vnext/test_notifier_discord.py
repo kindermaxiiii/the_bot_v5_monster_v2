@@ -51,7 +51,6 @@ def test_discord_vnext_notifier_returns_explicit_ack_result() -> None:
             "\n".join(
                 [
                     "👀 WATCHLIST LIVE",
-                    "",
                     "🏟️ Premier Test",
                     "⚔️ Match 999",
                     "🎯 Total extérieur - Under 1.5",
