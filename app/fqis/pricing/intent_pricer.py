@@ -68,12 +68,20 @@ def to_executable_bet(priced: PricedIntent) -> ExecutableBet:
         score_stat=priced.score_stat,
         score_exec=priced.score_exec,
         score_final=priced.score_final,
-        rationale=priced.intent.rationale,
+        rationale=priced.intent.rationale + (
+            f"strength={priced.thesis.strength:.4f}",
+            f"confidence={priced.thesis.confidence:.4f}",
+        ),
     )
 
 
 def _score_stat(strength: float, confidence: float, edge: float, ev: float) -> float:
-    base = (0.35 * strength) + (0.25 * confidence) + (0.20 * max(edge, 0.0)) + (0.20 * max(ev, 0.0))
+    base = (
+        (0.35 * strength)
+        + (0.25 * confidence)
+        + (0.20 * max(edge, 0.0))
+        + (0.20 * max(ev, 0.0))
+    )
     return max(0.0, min(1.0, base))
 
 
