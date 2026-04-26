@@ -1,3 +1,15 @@
+from app.fqis.probability.hybrid import (
+    HybridGovernedOutcome,
+    HybridPipelineOutcome,
+    HybridProbability,
+    HybridProbabilityConfig,
+    HybridProbabilityResult,
+    blend_model_and_market_probability,
+    build_hybrid_probability_result,
+    build_hybrid_probability_result_for_thesis,
+    run_hybrid_model_governed_thesis_pipeline,
+    run_hybrid_model_thesis_pipeline,
+)
 from app.fqis.probability.intent_bridge import (
     ProbabilityIntentBridgeResult,
     UnsupportedProbabilityIntent,
@@ -42,6 +54,11 @@ from app.fqis.probability.models import (
 from app.fqis.probability.score_distribution import build_score_distribution
 
 __all__ = [
+    "HybridGovernedOutcome",
+    "HybridPipelineOutcome",
+    "HybridProbability",
+    "HybridProbabilityConfig",
+    "HybridProbabilityResult",
     "LiveGoalFeatures",
     "LiveGoalModelConfig",
     "MarketModelComparison",
@@ -56,6 +73,9 @@ __all__ = [
     "ScoreDistribution",
     "ScoreProbability",
     "UnsupportedProbabilityIntent",
+    "blend_model_and_market_probability",
+    "build_hybrid_probability_result",
+    "build_hybrid_probability_result_for_thesis",
     "build_live_score_distribution",
     "build_market_prior_by_intent_key",
     "build_market_prior_groups",
@@ -70,6 +90,8 @@ __all__ = [
     "normalize_no_vig_probabilities",
     "offer_probability_key",
     "run_external_probability_thesis_pipeline",
+    "run_hybrid_model_governed_thesis_pipeline",
+    "run_hybrid_model_thesis_pipeline",
     "run_model_generated_governed_thesis_pipeline",
     "run_model_generated_thesis_pipeline",
     "run_probability_governed_thesis_pipeline",
