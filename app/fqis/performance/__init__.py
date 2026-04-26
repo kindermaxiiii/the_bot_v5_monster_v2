@@ -1,3 +1,16 @@
+from app.fqis.performance.clv import (
+    ClvBet,
+    ClvGroupSummary,
+    ClvReport,
+    ClosingOdds,
+    build_clv_bet,
+    build_clv_report_from_json,
+    build_clv_report_from_records,
+    clv_report_to_record,
+    implied_probability_from_decimal_odds,
+    load_closing_odds_from_jsonl,
+    write_clv_report_json,
+)
 from app.fqis.performance.metrics import (
     CalibrationBucket,
     MarketPerformance,
@@ -12,12 +25,23 @@ from app.fqis.performance.metrics import (
 
 __all__ = [
     "CalibrationBucket",
+    "ClvBet",
+    "ClvGroupSummary",
+    "ClvReport",
+    "ClosingOdds",
     "MarketPerformance",
     "NumericSummary",
     "PerformanceReport",
+    "build_clv_bet",
+    "build_clv_report_from_json",
+    "build_clv_report_from_records",
     "build_performance_report_from_json",
     "build_performance_report_from_records",
+    "clv_report_to_record",
+    "implied_probability_from_decimal_odds",
+    "load_closing_odds_from_jsonl",
     "load_settlement_report_records",
     "performance_report_to_record",
+    "write_clv_report_json",
     "write_performance_report_json",
 ]

@@ -1,0 +1,4 @@
+{"event_id":3101,"market_key":"TEAM_TOTAL_AWAY|UNDER|AWAY|1.5","closing_odds_decimal":1.70,"bookmaker_name":"ClosingBook","source_timestamp_utc":"2026-04-26T23:00:00+00:00"}
+{"event_id":3101,"market_key":"MATCH_TOTAL|UNDER|NONE|2.5","closing_odds_decimal":1.90,"bookmaker_name":"ClosingBook","source_timestamp_utc":"2026-04-26T23:00:00+00:00"}
+{"event_id":3102,"market_key":"TEAM_TOTAL_HOME|UNDER|HOME|1.5","closing_odds_decimal":1.80,"bookmaker_name":"ClosingBook","source_timestamp_utc":"2026-04-26T23:00:00+00:00"}
+
