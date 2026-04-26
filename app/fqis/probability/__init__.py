@@ -12,6 +12,15 @@ from app.fqis.probability.live_goal_model import (
     build_live_score_distribution,
     estimate_remaining_expectancy,
 )
+from app.fqis.probability.model_pipeline import (
+    ProbabilityGovernedOutcome,
+    ProbabilityPipelineOutcome,
+    run_external_probability_thesis_pipeline,
+    run_model_generated_governed_thesis_pipeline,
+    run_model_generated_thesis_pipeline,
+    run_probability_governed_thesis_pipeline,
+    run_probability_thesis_pipeline,
+)
 from app.fqis.probability.models import (
     MarketProbability,
     MatchScoreState,
@@ -26,7 +35,9 @@ __all__ = [
     "LiveGoalModelConfig",
     "MarketProbability",
     "MatchScoreState",
+    "ProbabilityGovernedOutcome",
     "ProbabilityIntentBridgeResult",
+    "ProbabilityPipelineOutcome",
     "RemainingGoalExpectancy",
     "ScoreDistribution",
     "ScoreProbability",
@@ -38,4 +49,9 @@ __all__ = [
     "build_score_distribution",
     "estimate_remaining_expectancy",
     "intent_probability_key",
+    "run_external_probability_thesis_pipeline",
+    "run_model_generated_governed_thesis_pipeline",
+    "run_model_generated_thesis_pipeline",
+    "run_probability_governed_thesis_pipeline",
+    "run_probability_thesis_pipeline",
 ]
