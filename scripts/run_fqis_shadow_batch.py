@@ -16,10 +16,16 @@ from app.fqis.runtime.batch_shadow import (
     run_shadow_batch,
     write_shadow_batch_jsonl,
 )
+from app.fqis.runtime.input_loader import load_shadow_inputs_from_jsonl
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run FQIS shadow batch cycle.")
+    parser.add_argument(
+        "--input-path",
+        default=None,
+        help="Optional JSONL input path. If omitted, demo inputs are used.",
+    )
     parser.add_argument(
         "--export-path",
         default=None,
@@ -36,7 +42,13 @@ def main() -> int:
 
     export_path = Path(args.export_path) if args.export_path else _default_export_path()
 
-    shadow_inputs = build_demo_shadow_inputs()
+    if args.input_path:
+        shadow_inputs = load_shadow_inputs_from_jsonl(Path(args.input_path))
+        source = "jsonl"
+    else:
+        shadow_inputs = build_demo_shadow_inputs()
+        source = "demo"
+
     batch_result = run_shadow_batch(
         shadow_inputs,
         min_strength=args.min_strength,
@@ -54,6 +66,7 @@ def main() -> int:
     print(
         "fqis_shadow_batch_complete "
         f"status={summary['status']} "
+        f"source={source} "
         f"matches={summary['match_count']} "
         f"accepted_matches={summary['accepted_match_count']} "
         f"rejected_matches={summary['rejected_match_count']} "
@@ -72,5 +85,3 @@ def _default_export_path() -> Path:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-    
