@@ -1,3 +1,11 @@
+from app.fqis.probability.intent_bridge import (
+    ProbabilityIntentBridgeResult,
+    UnsupportedProbabilityIntent,
+    build_p_real_by_intent_key,
+    build_probability_intent_bridge_result,
+    build_probability_intent_bridge_result_from_distribution,
+    intent_probability_key,
+)
 from app.fqis.probability.live_goal_model import (
     LiveGoalFeatures,
     LiveGoalModelConfig,
@@ -18,10 +26,16 @@ __all__ = [
     "LiveGoalModelConfig",
     "MarketProbability",
     "MatchScoreState",
+    "ProbabilityIntentBridgeResult",
     "RemainingGoalExpectancy",
     "ScoreDistribution",
     "ScoreProbability",
+    "UnsupportedProbabilityIntent",
     "build_live_score_distribution",
+    "build_p_real_by_intent_key",
+    "build_probability_intent_bridge_result",
+    "build_probability_intent_bridge_result_from_distribution",
     "build_score_distribution",
     "estimate_remaining_expectancy",
+    "intent_probability_key",
 ]
