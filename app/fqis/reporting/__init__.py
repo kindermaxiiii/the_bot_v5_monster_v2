@@ -1,3 +1,10 @@
+from app.fqis.reporting.audit_bundle import (
+    AuditBundleFile,
+    AuditBundleManifest,
+    audit_bundle_manifest_to_record,
+    build_audit_bundle,
+    write_audit_bundle_manifest_json,
+)
 from app.fqis.reporting.hybrid_shadow_report import (
     HybridShadowBatchReport,
     NumericSummary,
@@ -17,18 +24,22 @@ from app.fqis.reporting.run_audit import (
 )
 
 __all__ = [
+    "AuditBundleFile",
+    "AuditBundleManifest",
     "HybridShadowBatchReport",
     "NumericSummary",
     "RunAuditFlag",
     "RunAuditReport",
     "RunAuditThresholds",
+    "audit_bundle_manifest_to_record",
+    "build_audit_bundle",
     "build_hybrid_shadow_batch_report_from_jsonl",
     "build_hybrid_shadow_batch_report_from_records",
     "build_run_audit_report",
     "hybrid_shadow_batch_report_to_record",
     "load_hybrid_shadow_batch_records_from_jsonl",
     "run_audit_report_to_record",
+    "write_audit_bundle_manifest_json",
     "write_hybrid_shadow_batch_report_json",
     "write_run_audit_report_json",
 ]
-
