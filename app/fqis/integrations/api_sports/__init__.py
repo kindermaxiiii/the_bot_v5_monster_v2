@@ -94,3 +94,12 @@ from app.fqis.integrations.api_sports.run_ledger import (
     summarize_run_ledger,
 )
 
+from app.fqis.integrations.api_sports.run_registry import (
+    ApiSportsRunRegistry,
+    ApiSportsRunRegistryEntry,
+    ApiSportsRunRegistryError,
+    ApiSportsRunRegistrySelection,
+    ApiSportsRunRegistrySnapshot,
+    default_run_registry_limit,
+)
+
