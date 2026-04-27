@@ -7,6 +7,17 @@ from app.fqis.integrations.api_sports.market_discovery import (
     MarketMappingStatus,
     classify_market_bet,
 )
+from app.fqis.integrations.api_sports.normalization import (
+    ApiSportsNormalizationError,
+    ApiSportsNormalizer,
+    FqisNormalizedBatch,
+    FqisNormalizedFixture,
+    FqisNormalizedOddsOffer,
+    FqisNormalizedWriter,
+    FqisOddsSelection,
+    normalize_fixture,
+    normalize_odds_response,
+)
 from app.fqis.integrations.api_sports.snapshots import (
     ApiSportsSnapshotCollector,
     ApiSportsSnapshotKind,
@@ -24,6 +35,15 @@ __all__ = [
     "FqisMarketFamily",
     "MarketMappingStatus",
     "classify_market_bet",
+    "ApiSportsNormalizationError",
+    "ApiSportsNormalizer",
+    "FqisNormalizedBatch",
+    "FqisNormalizedFixture",
+    "FqisNormalizedOddsOffer",
+    "FqisNormalizedWriter",
+    "FqisOddsSelection",
+    "normalize_fixture",
+    "normalize_odds_response",
     "ApiSportsSnapshotCollector",
     "ApiSportsSnapshotKind",
     "ApiSportsSnapshotManifest",
