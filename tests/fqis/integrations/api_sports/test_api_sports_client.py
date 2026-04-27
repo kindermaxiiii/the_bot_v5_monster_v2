@@ -113,3 +113,20 @@ def test_client_uses_cache_hit_without_network_call(tmp_path):
 
     assert response.endpoint == "countries"
     assert session.calls == []
+
+
+def test_client_fetches_reference_bet_endpoints(tmp_path):
+    session = FakeSession()
+    config = ApiSportsConfig(api_key="SECRET", cache_dir=tmp_path)
+
+    client = ApiSportsClient(config=config, session=session)
+    client.odds_bookmakers(search="Bet365")
+    client.odds_bets(search="Over")
+    client.live_odds_bets(search="Over")
+
+    assert session.calls[0]["url"].endswith("/odds/bookmakers")
+    assert session.calls[0]["params"] == {"search": "Bet365"}
+    assert session.calls[1]["url"].endswith("/odds/bets")
+    assert session.calls[1]["params"] == {"search": "Over"}
+    assert session.calls[2]["url"].endswith("/odds/live/bets")
+    assert session.calls[2]["params"] == {"search": "Over"}

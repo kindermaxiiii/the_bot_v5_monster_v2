@@ -86,6 +86,41 @@ class ApiSportsClient:
     def countries(self) -> ApiSportsResponse:
         return self.get(ApiSportsEndpoint.COUNTRIES, cache_ttl_seconds=86_400)
 
+    def odds_bookmakers(
+        self,
+        *,
+        bookmaker_id: int | None = None,
+        search: str | None = None,
+    ) -> ApiSportsResponse:
+        return self.get(
+            ApiSportsEndpoint.ODDS_BOOKMAKERS,
+            {"id": bookmaker_id, "search": search},
+            cache_ttl_seconds=86_400,
+        )
+
+    def odds_bets(
+        self,
+        *,
+        bet_id: int | None = None,
+        search: str | None = None,
+    ) -> ApiSportsResponse:
+        return self.get(
+            ApiSportsEndpoint.ODDS_BETS,
+            {"id": bet_id, "search": search},
+            cache_ttl_seconds=86_400,
+        )
+
+    def live_odds_bets(
+        self,
+        *,
+        bet_id: int | None = None,
+        search: str | None = None,
+    ) -> ApiSportsResponse:
+        return self.get(
+            ApiSportsEndpoint.ODDS_LIVE_BETS,
+            {"id": bet_id, "search": search},
+            cache_ttl_seconds=3_600,
+        )
     def fixtures_by_date(self, date: str, timezone: str = "Europe/Paris") -> ApiSportsResponse:
         return self.get(
             ApiSportsEndpoint.FIXTURES,
