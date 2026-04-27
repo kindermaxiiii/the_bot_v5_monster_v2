@@ -13,4 +13,3 @@ __all__ = [
     "shadow_production_outcome_to_record",
     "write_shadow_production_outcome_json",
 ]
-
