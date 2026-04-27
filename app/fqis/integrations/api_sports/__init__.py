@@ -143,3 +143,13 @@ from app.fqis.integrations.api_sports.release_gate import (
     write_api_sports_release_gate,
 )
 
+from app.fqis.integrations.api_sports.release_manifest import (
+    ApiSportsReleaseManifest,
+    ApiSportsReleaseManifestArtifact,
+    ApiSportsReleaseManifestError,
+    build_api_sports_release_manifest,
+    default_release_manifest_path,
+    load_api_sports_release_manifest,
+    write_api_sports_release_manifest,
+)
+
