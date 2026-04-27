@@ -16,10 +16,10 @@ from app.fqis.config.profiles import (
     load_shadow_production_profile,
     shadow_production_profile_to_record,
 )
-from app.fqis.orchestration.shadow_runner import (
-    ShadowRunnerConfig,
-    run_shadow_runner,
-    shadow_runner_outcome_to_record,
+from app.fqis.monitoring.shadow_monitor import (
+    MonitoredShadowRunnerConfig,
+    monitored_shadow_runner_outcome_to_record,
+    run_monitored_shadow_runner,
 )
 
 
@@ -30,6 +30,8 @@ def main() -> int:
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--outcome-output-path", default=None)
     parser.add_argument("--latest-output-path", default=None)
+    parser.add_argument("--event-log-path", default=None)
+    parser.add_argument("--latest-status-path", default=None)
     parser.add_argument("--no-latest", action="store_true")
     parser.add_argument("--strict-exit-code", action="store_true")
     parser.add_argument("--print-profile", action="store_true")
@@ -52,22 +54,24 @@ def main() -> int:
         print(json.dumps(shadow_production_profile_to_record(profile), ensure_ascii=False, sort_keys=True))
         return 0
 
-    outcome = run_shadow_runner(
-        ShadowRunnerConfig(
+    outcome = run_monitored_shadow_runner(
+        MonitoredShadowRunnerConfig(
             profile_name=args.profile,
             profile_path=profile_path,
             run_id=args.run_id,
             outcome_output_path=Path(args.outcome_output_path) if args.outcome_output_path else None,
             latest_output_path=Path(args.latest_output_path) if args.latest_output_path else None,
+            event_log_path=Path(args.event_log_path) if args.event_log_path else None,
+            latest_status_path=Path(args.latest_status_path) if args.latest_status_path else None,
             write_latest=not args.no_latest,
         )
     )
-    record = shadow_runner_outcome_to_record(outcome)
+    record = monitored_shadow_runner_outcome_to_record(outcome)
 
     if args.json:
         print(json.dumps(record, ensure_ascii=False, sort_keys=True))
-    else:
-        headline = record["headline"]
+    elif outcome.runner_outcome is not None:
+        headline = record["runner_outcome"]["headline"]
         print(
             "fqis_shadow "
             f"status={outcome.status} "
@@ -83,9 +87,24 @@ def main() -> int:
             f"blockers={headline['blockers']} "
             f"warnings={headline['warnings']} "
             f"failures={headline['failures']} "
-            f"outcome_path={outcome.outcome_path} "
-            f"latest_path={outcome.latest_path or 'NA'}"
+            f"event_log={outcome.event_log_path} "
+            f"latest_status={outcome.latest_status_path}"
         )
+    else:
+        error = outcome.error or {}
+        print(
+            "fqis_shadow "
+            f"status=failed "
+            f"profile={outcome.profile.name} "
+            f"run_id={outcome.run_id} "
+            f"error_type={error.get('error_type', 'UNKNOWN')} "
+            f"message={_safe_message(error.get('message', ''))} "
+            f"event_log={outcome.event_log_path} "
+            f"latest_status={outcome.latest_status_path}"
+        )
+
+    if not outcome.is_success:
+        return 1
 
     if args.strict_exit_code and not outcome.is_go:
         return 2
@@ -98,6 +117,10 @@ def _format_optional(value: object) -> str:
         return "NA"
 
     return f"{float(value):.6f}"
+
+
+def _safe_message(message: object) -> str:
+    return str(message).replace(" ", "_")
 
 
 if __name__ == "__main__":
