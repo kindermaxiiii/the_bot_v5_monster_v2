@@ -12,3 +12,9 @@ Documents/
 .pytest_tmp_cache/
 .pytest_tmp_targeted/
 .pytest_tmp_vnext/
+.env.*
+!.env.example
+data/
+repo_audit_bot.zip
+*.zip
+*.py[cod]
