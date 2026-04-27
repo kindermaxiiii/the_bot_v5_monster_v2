@@ -35,6 +35,7 @@ class ShadowProductionConfig:
     results_path: Path
     closing_path: Path
     output_root: Path
+    audit_bundle_root: Path | None = None
     run_id: str | None = None
     stake: float = 1.0
 
@@ -74,7 +75,7 @@ def run_shadow_production(config: ShadowProductionConfig) -> ShadowProductionOut
 
     hybrid_batch_path = output_dir / "hybrid_shadow_batch.jsonl"
     settlement_path = output_dir / "settlement_report.json"
-    bundle_root = output_dir / "audit_bundles"
+    bundle_root = config.audit_bundle_root or output_dir / "audit_bundles"
     readiness_path = output_dir / "production_readiness_report.json"
 
     hybrid_batch = run_hybrid_shadow_batch_from_jsonl(config.input_path)
