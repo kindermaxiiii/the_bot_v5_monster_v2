@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
@@ -223,8 +223,9 @@ def normalize_odds_response(items: Iterable[Any], *, source: str) -> list[FqisNo
                     continue
 
                 market_candidate = classify_market_bet(
-                    {"id": bet_id, "name": bet_name},
                     source=_market_source(source_value),
+                    provider_market_id=int(bet_id),
+                    provider_name=bet_name,
                 )
 
                 values = bet.get("values", [])
@@ -260,13 +261,9 @@ def normalize_odds_response(items: Iterable[Any], *, source: str) -> list[FqisNo
                             bookmaker_name=bookmaker_name,
                             provider_market_id=bet_id,
                             provider_market_name=bet_name,
-                            provider_market_key=market_candidate.provider_market_key,
-                            fqis_market_family=(
-                                market_candidate.fqis_market_family.value
-                                if market_candidate.fqis_market_family is not None
-                                else None
-                            ),
-                            mapping_status=market_candidate.status.value,
+                            provider_market_key=f"api_sports:{source_value}:{bet_id}",
+                            fqis_market_family=_candidate_family_value(market_candidate),
+                            mapping_status=str(market_candidate.status.value).upper(),
                             period=period,
                             line=line,
                             selection=selection.value,
@@ -478,3 +475,29 @@ def _safe_path_part(value: str) -> str:
         else:
             allowed.append("_")
     return "".join(allowed).strip("_") or "unknown"
+
+
+
+
+def _enum_or_str_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    enum_value = getattr(value, "value", None)
+    if enum_value is not None:
+        return str(enum_value)
+    return str(value)
+
+
+def _candidate_family_value(candidate: Any) -> str | None:
+    for attr in (
+        "fqis_market_family",
+        "market_family",
+        "family",
+        "fqis_family",
+        "mapped_family",
+    ):
+        value = getattr(candidate, attr, None)
+        if value is not None:
+            return _enum_or_str_value(value)
+    return None
+
