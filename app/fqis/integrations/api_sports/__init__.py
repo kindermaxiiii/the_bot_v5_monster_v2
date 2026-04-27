@@ -132,3 +132,14 @@ from app.fqis.integrations.api_sports.operator_report import (
     write_api_sports_operator_report,
 )
 
+from app.fqis.integrations.api_sports.release_gate import (
+    ApiSportsReleaseGateCheck,
+    ApiSportsReleaseGateConfig,
+    ApiSportsReleaseGateDecision,
+    ApiSportsReleaseGateError,
+    assert_api_sports_release_ready,
+    default_release_gate_path,
+    evaluate_api_sports_release_gate,
+    write_api_sports_release_gate,
+)
+
