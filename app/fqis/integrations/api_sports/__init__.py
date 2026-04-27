@@ -103,3 +103,13 @@ from app.fqis.integrations.api_sports.run_registry import (
     default_run_registry_limit,
 )
 
+from app.fqis.integrations.api_sports.audit_bundle import (
+    ApiSportsAuditBundle,
+    ApiSportsAuditBundleError,
+    ApiSportsAuditBundleFile,
+    build_api_sports_audit_bundle,
+    default_audit_bundle_dir,
+    resolve_manifest_from_registry,
+    write_api_sports_audit_bundle,
+)
+
