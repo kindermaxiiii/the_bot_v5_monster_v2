@@ -113,3 +113,13 @@ from app.fqis.integrations.api_sports.audit_bundle import (
     write_api_sports_audit_bundle,
 )
 
+from app.fqis.integrations.api_sports.audit_index import (
+    ApiSportsAuditIndex,
+    ApiSportsAuditIndexEntry,
+    ApiSportsAuditIndexError,
+    build_api_sports_audit_index,
+    default_audit_index_path,
+    select_latest_audit_bundle,
+    write_api_sports_audit_index,
+)
+
