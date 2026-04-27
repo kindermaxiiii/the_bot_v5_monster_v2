@@ -123,3 +123,12 @@ from app.fqis.integrations.api_sports.audit_index import (
     write_api_sports_audit_index,
 )
 
+from app.fqis.integrations.api_sports.operator_report import (
+    ApiSportsOperatorCheck,
+    ApiSportsOperatorReport,
+    ApiSportsOperatorReportError,
+    build_api_sports_operator_report,
+    default_operator_report_path,
+    write_api_sports_operator_report,
+)
+
