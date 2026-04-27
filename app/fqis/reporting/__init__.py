@@ -35,6 +35,15 @@ from app.fqis.reporting.hybrid_shadow_report import (
     load_hybrid_shadow_batch_records_from_jsonl,
     write_hybrid_shadow_batch_report_json,
 )
+from app.fqis.reporting.production_readiness import (
+    ProductionReadinessReport,
+    ReadinessChecklistItem,
+    evaluate_production_readiness_from_bundle_root,
+    evaluate_production_readiness_from_gate_report,
+    evaluate_production_readiness_from_manifest_paths,
+    production_readiness_report_to_record,
+    write_production_readiness_report_json,
+)
 from app.fqis.reporting.run_audit import (
     RunAuditFlag,
     RunAuditReport,
@@ -55,6 +64,8 @@ __all__ = [
     "AuditHistoryRun",
     "HybridShadowBatchReport",
     "NumericSummary",
+    "ProductionReadinessReport",
+    "ReadinessChecklistItem",
     "RunAuditFlag",
     "RunAuditReport",
     "RunAuditThresholds",
@@ -71,13 +82,18 @@ __all__ = [
     "evaluate_audit_history_from_bundle_root",
     "evaluate_audit_history_from_manifest_paths",
     "evaluate_audit_history_report",
+    "evaluate_production_readiness_from_bundle_root",
+    "evaluate_production_readiness_from_gate_report",
+    "evaluate_production_readiness_from_manifest_paths",
     "hybrid_shadow_batch_report_to_record",
     "load_audit_bundle_manifest",
     "load_hybrid_shadow_batch_records_from_jsonl",
+    "production_readiness_report_to_record",
     "run_audit_report_to_record",
     "write_audit_bundle_manifest_json",
     "write_audit_history_gate_report_json",
     "write_audit_history_report_json",
     "write_hybrid_shadow_batch_report_json",
+    "write_production_readiness_report_json",
     "write_run_audit_report_json",
 ]
