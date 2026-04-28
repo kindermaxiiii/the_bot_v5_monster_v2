@@ -187,3 +187,12 @@ from app.fqis.integrations.api_sports.paper_candidates import (
     write_api_sports_paper_candidates,
 )
 
+from app.fqis.integrations.api_sports.paper_report import (
+    ApiSportsPaperReport,
+    ApiSportsPaperReportConfig,
+    ApiSportsPaperReportError,
+    build_api_sports_paper_report,
+    default_paper_report_path,
+    write_api_sports_paper_report,
+)
+
