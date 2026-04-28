@@ -242,3 +242,15 @@ from app.fqis.integrations.api_sports.inplay_live_odds_candidates import (
     sample_inplay_live_odds_payload,
     write_api_sports_inplay_live_odds_candidates,
 )
+
+from app.fqis.integrations.api_sports.live_odds_coverage_diagnostics import (
+    ApiSportsLiveOddsCoverageDiagnostics,
+    ApiSportsLiveOddsCoverageDiagnosticsConfig,
+    ApiSportsLiveOddsCoverageDiagnosticsError,
+    build_api_sports_live_odds_coverage_diagnostics,
+    fetch_api_sports_live_odds_payload,
+    render_api_sports_live_odds_coverage_diagnostics_markdown,
+    sample_live_odds_coverage_payloads,
+    write_api_sports_live_odds_coverage_diagnostics,
+)
+
