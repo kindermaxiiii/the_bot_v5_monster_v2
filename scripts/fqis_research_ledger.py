@@ -362,7 +362,8 @@ def append_rows(path: Path, rows: list[dict[str, Any]]) -> int:
     return len(new_rows)
 
 
-def write_latest_markdown(path: Path, rows: list[dict[str, Any]], appended: int, total_seen: int) -> None:
+def write_latest_markdown(path: Path, rows: list[dict[str, Any]], appended: int, total_seen: int, diagnostics: dict[str, Any] | None = None) -> None:
+    diagnostics = diagnostics or {}
     strict_count = sum(1 for r in rows if r["research_data_tier"] == "STRICT_EVENTS_PLUS_STATS")
     events_only_count = sum(1 for r in rows if r["research_data_tier"] == "EVENTS_ONLY_RESEARCH")
 
@@ -376,6 +377,12 @@ def write_latest_markdown(path: Path, rows: list[dict[str, Any]], appended: int,
         f"- Events-only research candidates: **{events_only_count}**",
         f"- New snapshots appended: **{appended}**",
         f"- Existing snapshots before append: **{total_seen}**",
+        f"- Decisions screened: **{diagnostics.get('decisions_screened', 0)}**",
+        f"- Rejected by timing policy: **{diagnostics.get('timing_policy_rejected', 0)}**",
+        f"- Rejected by data tier: **{diagnostics.get('data_tier_rejected', 0)}**",
+        f"- Rejected by non-positive edge/EV: **{diagnostics.get('non_positive_edge_or_ev_rejected', 0)}**",
+        f"- Rejected by final status: **{diagnostics.get('final_status_rejected', 0)}**",
+        f"- Rejected by negative-value veto: **{diagnostics.get('negative_value_veto_rejected', 0)}**",
         "",
         "> Research only. No live staking. No Discord production publication.",
         "",
@@ -418,10 +425,43 @@ def main() -> int:
     payload = load_payload()
     decisions = payload.get("decisions") or []
 
+    rejection_counts = {
+        "decisions_screened": len(decisions),
+        "final_status_rejected": 0,
+        "non_positive_edge_or_ev_rejected": 0,
+        "timing_policy_rejected": 0,
+        "negative_value_veto_rejected": 0,
+        "data_tier_rejected": 0,
+    }
+
+    accepted_decisions = []
+
+    for d in decisions:
+        if final_operational_status(d) != "NO_BET":
+            rejection_counts["final_status_rejected"] += 1
+            continue
+
+        if fnum(d.get("edge")) <= 0 or fnum(d.get("expected_value")) <= 0:
+            rejection_counts["non_positive_edge_or_ev_rejected"] += 1
+            continue
+
+        if not passes_research_timing_policy(d):
+            rejection_counts["timing_policy_rejected"] += 1
+            continue
+
+        if has_negative_value_veto(d):
+            rejection_counts["negative_value_veto_rejected"] += 1
+            continue
+
+        if research_data_tier(d) == "REJECTED_DATA_TIER":
+            rejection_counts["data_tier_rejected"] += 1
+            continue
+
+        accepted_decisions.append(d)
+
     candidates = [
         decision_to_row(d, payload)
-        for d in decisions
-        if is_research_candidate(d)
+        for d in accepted_decisions
     ]
 
     candidates.sort(
@@ -447,12 +487,13 @@ def main() -> int:
             "events_only_research": sum(1 for r in candidates if r["research_data_tier"] == "EVENTS_ONLY_RESEARCH"),
             "new_snapshots_appended": appended,
             "existing_snapshots_before_append": seen_before,
+            **rejection_counts,
         },
         "candidates": candidates,
     }
 
     LATEST_JSON.write_text(json.dumps(latest_payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    write_latest_markdown(LATEST_MD, candidates, appended, seen_before)
+    write_latest_markdown(LATEST_MD, candidates, appended, seen_before, rejection_counts)
 
     print(json.dumps({
         "status": "READY",
@@ -460,6 +501,7 @@ def main() -> int:
         "strict_events_plus_stats": latest_payload["summary"]["strict_events_plus_stats"],
         "events_only_research": latest_payload["summary"]["events_only_research"],
         "new_snapshots_appended": appended,
+        **rejection_counts,
         "ledger_csv": str(LEDGER_CSV),
         "latest_md": str(LATEST_MD),
     }, indent=2, ensure_ascii=False))
