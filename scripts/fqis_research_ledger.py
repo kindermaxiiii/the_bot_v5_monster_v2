@@ -231,6 +231,69 @@ def is_research_candidate(decision: dict[str, Any]) -> bool:
     return False
 
 
+
+def ensure_ledger_schema(path: Path, required_fields: list[str]) -> dict[str, Any]:
+    """
+    Defensive CSV schema migration.
+
+    If the ledger already exists with an old header, rewrite it with the current
+    institutional schema while preserving existing rows and unknown extra columns.
+    This prevents silent empty fields after adding new columns.
+    """
+    if not path.exists():
+        return {
+            "schema_migrated": False,
+            "schema_backup": "",
+            "schema_missing_fields": [],
+            "schema_rows_rewritten": 0,
+        }
+
+    try:
+        with path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            original_fields = list(reader.fieldnames or [])
+            rows = list(reader)
+    except Exception:
+        return {
+            "schema_migrated": False,
+            "schema_backup": "",
+            "schema_missing_fields": ["READ_ERROR"],
+            "schema_rows_rewritten": 0,
+        }
+
+    missing = [field for field in required_fields if field not in original_fields]
+
+    if not missing:
+        return {
+            "schema_migrated": False,
+            "schema_backup": "",
+            "schema_missing_fields": [],
+            "schema_rows_rewritten": len(rows),
+        }
+
+    extra_fields = [field for field in original_fields if field not in required_fields]
+    final_fields = list(required_fields) + extra_fields
+
+    backup = path.with_name(
+        f"{path.stem}.schema_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}{path.suffix}"
+    )
+    backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=final_fields)
+        writer.writeheader()
+
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in final_fields})
+
+    return {
+        "schema_migrated": True,
+        "schema_backup": str(backup),
+        "schema_missing_fields": missing,
+        "schema_rows_rewritten": len(rows),
+    }
+
+
 def load_seen_snapshot_keys(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -473,6 +536,8 @@ def main() -> int:
         reverse=True,
     )
 
+    schema_report = ensure_ledger_schema(LEDGER_CSV, FIELDS)
+
     seen_before = len(load_seen_snapshot_keys(LEDGER_CSV))
     appended = append_rows(LEDGER_CSV, candidates)
 
@@ -488,6 +553,7 @@ def main() -> int:
             "new_snapshots_appended": appended,
             "existing_snapshots_before_append": seen_before,
             **rejection_counts,
+            **schema_report,
         },
         "candidates": candidates,
     }
@@ -502,6 +568,7 @@ def main() -> int:
         "events_only_research": latest_payload["summary"]["events_only_research"],
         "new_snapshots_appended": appended,
         **rejection_counts,
+        **schema_report,
         "ledger_csv": str(LEDGER_CSV),
         "latest_md": str(LATEST_MD),
     }, indent=2, ensure_ascii=False))
