@@ -207,6 +207,93 @@ def write_master_report(payload: dict[str, Any]) -> None:
     LATEST_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+
+def inject_research_screening_diagnostics_into_latest_full_cycle_report() -> None:
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+
+    report_path = (
+        root
+        / "data"
+        / "pipeline"
+        / "api_sports"
+        / "orchestrator"
+        / "latest_full_cycle_report.md"
+    )
+
+    audit_path = (
+        root
+        / "data"
+        / "pipeline"
+        / "api_sports"
+        / "audit"
+        / "latest_daily_audit_report.json"
+    )
+
+    if not report_path.exists() or not audit_path.exists():
+        return
+
+    try:
+        audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    diag = audit.get("research_diagnostics") or {}
+    verdict = audit.get("verdict") or {}
+    key_metrics = verdict.get("key_metrics") or {}
+
+    def val(name: str, default=0):
+        return diag.get(name, key_metrics.get(name, default))
+
+    def fnum(x, default: float = 0.0) -> float:
+        try:
+            if x is None or x == "":
+                return default
+            return float(str(x).replace(",", ".").strip())
+        except Exception:
+            return default
+
+    def pct(x) -> str:
+        return f"{fnum(x) * 100:.2f}%"
+
+    section = "\n".join([
+        "## Research Screening Diagnostics",
+        "",
+        f"- Decisions screened: **{val('decisions_screened')}**",
+        f"- Candidates accepted: **{val('candidates_this_cycle')}**",
+        f"- Research acceptance rate: **{pct(val('research_acceptance_rate'))}**",
+        f"- Strict events+stats candidates: **{val('strict_events_plus_stats')}**",
+        f"- Events-only research candidates: **{val('events_only_research')}**",
+        f"- New snapshots appended: **{val('new_snapshots_appended')}**",
+        f"- Rejected by timing policy: **{val('timing_policy_rejected')}** = **{pct(val('timing_rejection_rate'))}**",
+        f"- Rejected by data tier: **{val('data_tier_rejected')}** = **{pct(val('data_tier_rejection_rate'))}**",
+        f"- Rejected by non-positive edge/EV: **{val('non_positive_edge_or_ev_rejected')}** = **{pct(val('non_positive_edge_or_ev_rejection_rate'))}**",
+        f"- Rejected by final status: **{val('final_status_rejected')}**",
+        f"- Rejected by negative-value veto: **{val('negative_value_veto_rejected')}**",
+        "",
+    ])
+
+    report = report_path.read_text(encoding="utf-8")
+
+    report = re.sub(
+        r"\n## Research Screening Diagnostics\n.*?(?=\n## )",
+        "\n",
+        report,
+        flags=re.DOTALL,
+    )
+
+    marker = "\n## Research Performance"
+    if marker in report:
+        report = report.replace(marker, "\n" + section + marker, 1)
+    else:
+        report = report.rstrip() + "\n\n" + section + "\n"
+
+    report_path.write_text(report, encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-bridge", action="store_true")
@@ -298,4 +385,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    inject_research_screening_diagnostics_into_latest_full_cycle_report()
+    raise SystemExit(exit_code)
