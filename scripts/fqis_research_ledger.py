@@ -159,6 +159,45 @@ def research_bucket(decision: dict[str, Any]) -> str:
     return f"{prefix}_MARKET_RESEARCH"
 
 
+
+def passes_research_timing_policy(decision: dict[str, Any]) -> bool:
+    """
+    Institutional timing guard.
+    Prevents very-early live Under candidates from entering the research ledger,
+    even if the model sees apparent EV.
+
+    Rationale:
+    - Minute 0-10 Under edges are often unstable or mechanical.
+    - Low Under lines need much more match evidence.
+    - Research is aggressive, but not blind.
+    """
+    minute = fnum(decision.get("minute"), 0.0)
+    side = str(decision.get("side") or "").upper()
+    line = fnum(decision.get("line"), 0.0)
+
+    if minute <= 0:
+        return False
+
+    if side == "UNDER":
+        if minute < 8:
+            return False
+
+        if line <= 0.5 and minute < 55:
+            return False
+
+        if line <= 1.5 and minute < 45:
+            return False
+
+        if line <= 2.5 and minute < 20:
+            return False
+
+    if side == "OVER":
+        if minute < 8:
+            return False
+
+    return True
+
+
 def is_research_candidate(decision: dict[str, Any]) -> bool:
     p = decision.get("payload") or {}
     mode = str(p.get("level3_data_mode") or "")
@@ -170,6 +209,9 @@ def is_research_candidate(decision: dict[str, Any]) -> bool:
         return False
 
     if fnum(decision.get("expected_value")) <= 0:
+        return False
+
+    if not passes_research_timing_policy(decision):
         return False
 
     if has_negative_value_veto(decision):
