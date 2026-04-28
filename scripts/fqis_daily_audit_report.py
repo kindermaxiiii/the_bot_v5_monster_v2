@@ -94,6 +94,57 @@ def research_diagnostics(research_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def research_side_bias_metrics() -> dict[str, Any]:
+    import csv
+    from collections import Counter
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    ledger = root / "data" / "pipeline" / "api_sports" / "research_ledger" / "research_candidates_ledger.csv"
+
+    if not ledger.exists():
+        return {
+            "research_rows_total": 0,
+            "under_rows": 0,
+            "over_rows": 0,
+            "under_share": 0.0,
+            "over_share": 0.0,
+            "dominant_side": "",
+        }
+
+    rows = []
+    try:
+        with ledger.open("r", encoding="utf-8", newline="") as f:
+            rows = list(csv.DictReader(f))
+    except Exception:
+        rows = []
+
+    counter = Counter(str(r.get("side") or "").upper() for r in rows)
+    total = len(rows)
+    under = counter.get("UNDER", 0)
+    over = counter.get("OVER", 0)
+
+    under_share = under / total if total else 0.0
+    over_share = over / total if total else 0.0
+
+    if under_share > over_share:
+        dominant = "UNDER"
+    elif over_share > under_share:
+        dominant = "OVER"
+    else:
+        dominant = "BALANCED"
+
+    return {
+        "research_rows_total": total,
+        "under_rows": under,
+        "over_rows": over,
+        "under_share": round(under_share, 6),
+        "over_share": round(over_share, 6),
+        "dominant_side": dominant,
+    }
+
+
 def build_verdict(
     bridge_s: dict[str, Any],
     level3_s: dict[str, Any],
@@ -151,7 +202,7 @@ def build_verdict(
     if clv_5m_tracked < 100:
         flags.append("INSUFFICIENT_FIXED_HORIZON_CLV_SAMPLE")
 
-    if diag["decisions_screened"] > 0 and diag["research_acceptance_rate"] > 0.35:
+    if diag["decisions_screened"] >= 30 and diag["research_acceptance_rate"] > 0.35:
         flags.append("RESEARCH_ACCEPTANCE_RATE_TOO_HIGH_REVIEW_FILTERS")
 
     promotion_allowed = False
@@ -250,6 +301,15 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Rejected by final status: **{diag['final_status_rejected']}**",
         f"- Rejected by negative-value veto: **{diag['negative_value_veto_rejected']}**",
         "",
+        "## Research Side Bias",
+        "",
+        f"- Research rows total: **{payload.get('research_side_bias', {}).get('research_rows_total', 0)}**",
+        f"- UNDER rows: **{payload.get('research_side_bias', {}).get('under_rows', 0)}**",
+        f"- OVER rows: **{payload.get('research_side_bias', {}).get('over_rows', 0)}**",
+        f"- UNDER share: **{pct(payload.get('research_side_bias', {}).get('under_share', 0))}**",
+        f"- OVER share: **{pct(payload.get('research_side_bias', {}).get('over_share', 0))}**",
+        f"- Dominant side: **{payload.get('research_side_bias', {}).get('dominant_side', '')}**",
+        "",
         "## Historical Provider Coverage",
         "",
         "> This section is historical over stored raw Level 3 files, not only the latest cycle.",
@@ -326,6 +386,7 @@ def main() -> int:
     provider_s = summary(provider)
 
     diag = research_diagnostics(research)
+    side_bias = research_side_bias_metrics()
 
     verdict = build_verdict(
         bridge_s=bridge_s,
@@ -336,6 +397,17 @@ def main() -> int:
         diag=diag,
     )
 
+    if side_bias["research_rows_total"] >= 50 and side_bias["under_share"] >= 0.70:
+        verdict["flags"].append("RESEARCH_SIDE_BIAS_UNDER_DOMINANT")
+        verdict["key_metrics"].update(side_bias)
+
+    if side_bias["research_rows_total"] >= 50 and side_bias["over_share"] >= 0.70:
+        verdict["flags"].append("RESEARCH_SIDE_BIAS_OVER_DOMINANT")
+        verdict["key_metrics"].update(side_bias)
+
+    if "research_side_bias" not in verdict["key_metrics"]:
+        verdict["key_metrics"].update(side_bias)
+
     payload = {
         "mode": "FQIS_DAILY_AUDIT_REPORT",
         "generated_at_utc": utc_now(),
@@ -344,6 +416,7 @@ def main() -> int:
         "level3_summary": level3_s,
         "research_summary": research_s,
         "research_diagnostics": diag,
+        "research_side_bias": side_bias,
         "settlement_summary": settlement_s,
         "performance_summary": performance_s,
         "clv_horizon_summary": clv_s,
