@@ -308,7 +308,7 @@ def _reason_block(items: Sequence[Mapping[str, Any]]) -> list[str]:
         reason = _optional_str(item.get("reason")) or "No reason provided."
         warnings = ", ".join(str(warning) for warning in _sequence(item.get("warnings")))
         warning_text = warnings if warnings else "none"
-        lines.append(f"- **{_cell(match)}** ? {reason} Warnings: `{warning_text}`")
+        lines.append(f"- **{_cell(match)}** - {reason} Warnings: `{warning_text}`")
 
     return lines
 
