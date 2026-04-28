@@ -163,3 +163,15 @@ from app.fqis.integrations.api_sports.release_pack import (
     write_api_sports_release_pack,
 )
 
+from app.fqis.integrations.api_sports.paper_preview import (
+    ApiSportsPaperCandidate,
+    ApiSportsPaperPick,
+    ApiSportsPaperPreview,
+    ApiSportsPaperPreviewConfig,
+    ApiSportsPaperPreviewError,
+    build_api_sports_paper_preview,
+    default_paper_preview_path,
+    sample_paper_candidates,
+    write_api_sports_paper_preview,
+)
+
