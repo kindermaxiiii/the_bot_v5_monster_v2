@@ -231,7 +231,7 @@ def sample_paper_candidate_inputs() -> list[dict[str, object]]:
             "odds": 1.89,
             "model_probability": 0.535,
             "bookmaker": "PaperBook",
-            "reason": "Test paper: signal int-ressant mais edge faible.",
+            "reason": "Test paper: signal interessant mais edge faible.",
         },
         {
             "match": "Inter vs Torino",
@@ -249,7 +249,7 @@ def sample_paper_candidate_inputs() -> list[dict[str, object]]:
             "odds": 2.05,
             "model_probability": 0.545,
             "bookmaker": "PaperBook",
-            "reason": "Test paper: value th-orique -lev-e.",
+            "reason": "Test paper: value theorique elevee.",
         },
     ]
 
