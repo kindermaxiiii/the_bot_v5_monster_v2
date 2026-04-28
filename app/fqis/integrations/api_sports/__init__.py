@@ -220,3 +220,15 @@ from app.fqis.integrations.api_sports.live_market_snapshot import (
     write_api_sports_live_market_snapshot,
 )
 
+from app.fqis.integrations.api_sports.inplay_fixtures import (
+    ApiSportsInplayFixture,
+    ApiSportsInplayFixtures,
+    ApiSportsInplayFixturesConfig,
+    ApiSportsInplayFixturesError,
+    ApiSportsRejectedInplayFixture,
+    build_api_sports_inplay_fixtures_from_payload,
+    fetch_api_sports_inplay_fixtures,
+    sample_inplay_fixtures_payload,
+    write_api_sports_inplay_fixtures,
+)
+
