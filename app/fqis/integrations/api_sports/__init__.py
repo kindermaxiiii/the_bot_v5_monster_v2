@@ -196,3 +196,15 @@ from app.fqis.integrations.api_sports.paper_report import (
     write_api_sports_paper_report,
 )
 
+from app.fqis.integrations.api_sports.live_paper_candidates import (
+    ApiSportsLivePaperCandidate,
+    ApiSportsLivePaperCandidates,
+    ApiSportsLivePaperCandidatesError,
+    ApiSportsLivePaperConfig,
+    build_api_sports_live_paper_candidates_from_payloads,
+    fetch_api_sports_live_paper_candidates,
+    sample_fixture_map,
+    sample_odds_payload,
+    write_api_sports_live_paper_candidates,
+)
+
