@@ -242,7 +242,7 @@ def sample_paper_candidates() -> list[dict[str, object]]:
             "odds": 1.92,
             "model_probability": 0.568,
             "bookmaker": "SampleBook",
-            "reason": "Paper sample: profile offensif coh-rent, edge th-orique positif.",
+            "reason": "Paper sample: profile offensif coherent, edge theorique positif.",
         },
         {
             "match": "Team C vs Team D",
@@ -251,7 +251,7 @@ def sample_paper_candidates() -> list[dict[str, object]]:
             "odds": 1.89,
             "model_probability": 0.535,
             "bookmaker": "SampleBook",
-            "reason": "Paper sample: signal int-ressant mais edge trop faible pour bet principal.",
+            "reason": "Paper sample: signal interessant mais edge trop faible pour bet principal.",
         },
         {
             "match": "Team E vs Team F",
@@ -300,7 +300,7 @@ def _score_candidate(
             stake_units=config.max_stake_units,
             decision="PAPER_BET",
             status="PAPER_ONLY",
-            reason=candidate.reason or "Edge th-orique positif. Observation uniquement.",
+            reason=candidate.reason or "Edge theorique positif. Observation uniquement.",
             warnings=tuple(warnings + ["MICRO_STAKE_MAX"]),
         )
 
@@ -319,7 +319,7 @@ def _score_candidate(
             stake_units=0.0,
             decision="WATCHLIST",
             status="PAPER_ONLY",
-            reason=candidate.reason or "Signal int-ressant mais edge insuffisant pour paper bet principal.",
+            reason=candidate.reason or "Signal interessant mais edge insuffisant pour paper bet principal.",
             warnings=tuple(warnings),
         )
 
