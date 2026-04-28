@@ -171,6 +171,20 @@ def build_api_sports_live_paper_candidates_from_payloads(
                             rejected.append({"reason": "missing selection or odds", "raw": dict(value)})
                             continue
 
+                        canonical_selection = _canonical_live_selection(market, selection)
+                        if canonical_selection is None:
+                            rejected.append(
+                                {
+                                    "reason": "unsupported live paper market selection",
+                                    "odds": odds,
+                                    "market": market,
+                                    "selection": selection,
+                                }
+                            )
+                            continue
+
+                        selection = canonical_selection
+
                         if odds < live_config.min_odds or odds > live_config.max_odds:
                             rejected.append(
                                 {
@@ -456,17 +470,46 @@ def _market_name(bet: Mapping[str, Any]) -> str | None:
     if not name:
         return None
 
-    normalized = name.lower().strip()
+    normalized = " ".join(name.lower().replace("-", " ").split())
 
     if normalized in {"match winner", "1x2"}:
         return "1X2"
-    if "over/under" in normalized or "goals over" in normalized:
+
+    if normalized in {"goals over/under", "goals over under", "total goals"}:
         return "Total Goals"
-    if "both teams" in normalized and "score" in normalized:
+
+    if normalized in {"both teams score", "both teams to score"}:
         return "Both Teams To Score"
 
     return None
 
+
+def _canonical_live_selection(market: str, selection: str) -> str | None:
+    normalized = " ".join(selection.strip().split()).lower()
+
+    if market == "1X2":
+        mapping = {
+            "home": "Home",
+            "draw": "Draw",
+            "away": "Away",
+        }
+        return mapping.get(normalized)
+
+    if market == "Total Goals":
+        mapping = {
+            "over 2.5": "Over 2.5",
+            "under 2.5": "Under 2.5",
+        }
+        return mapping.get(normalized)
+
+    if market == "Both Teams To Score":
+        mapping = {
+            "yes": "Yes",
+            "no": "No",
+        }
+        return mapping.get(normalized)
+
+    return None
 
 def _api_key_from_env_or_dotenv() -> str:
     names = (

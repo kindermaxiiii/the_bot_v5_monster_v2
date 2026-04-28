@@ -55,3 +55,74 @@ def test_write_live_paper_candidates_sample_creates_file(tmp_path):
     assert payload["mode"] == "LIVE_PAPER_CANDIDATES"
     assert payload["real_staking_enabled"] is False
     assert len(payload["candidates"]) == 3
+
+
+def test_live_paper_candidates_keeps_only_core_market_selections():
+    payload = {
+        "response": [
+            {
+                "fixture": {"id": 1001, "date": "2026-04-28T19:00:00+00:00"},
+                "bookmakers": [
+                    {
+                        "name": "StrictBook",
+                        "bets": [
+                            {
+                                "name": "Match Winner",
+                                "values": [
+                                    {"value": "Home", "odd": "2.00"},
+                                    {"value": "Home/Draw", "odd": "1.30"},
+                                ],
+                            },
+                            {
+                                "name": "Goals Over/Under",
+                                "values": [
+                                    {"value": "Over 1.5", "odd": "1.35"},
+                                    {"value": "Over 2.5", "odd": "2.05"},
+                                    {"value": "Under 2.5", "odd": "1.80"},
+                                ],
+                            },
+                            {
+                                "name": "Both Teams Score",
+                                "values": [
+                                    {"value": "Yes", "odd": "1.90"},
+                                    {"value": "No", "odd": "1.95"},
+                                    {"value": "Draw/Yes", "odd": "4.50"},
+                                    {"value": "Home/No", "odd": "4.33"},
+                                ],
+                            },
+                            {
+                                "name": "Result/Both Teams Score",
+                                "values": [
+                                    {"value": "Yes", "odd": "2.10"},
+                                ],
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    result = build_api_sports_live_paper_candidates_from_payloads(
+        odds_payloads=[payload],
+        fixtures=sample_fixture_map(),
+        config=ApiSportsLivePaperConfig(date="2026-04-28", max_candidates=20),
+    )
+
+    selections = {(item.market, item.selection) for item in result.candidates}
+
+    assert selections == {
+        ("1X2", "Home"),
+        ("Total Goals", "Over 2.5"),
+        ("Total Goals", "Under 2.5"),
+        ("Both Teams To Score", "Yes"),
+        ("Both Teams To Score", "No"),
+    }
+
+    rejected_selections = {item["selection"] for item in result.rejected}
+
+    assert "Over 1.5" in rejected_selections
+    assert "Home/Draw" in rejected_selections
+    assert "Draw/Yes" in rejected_selections
+    assert "Home/No" in rejected_selections
+
