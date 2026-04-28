@@ -220,6 +220,18 @@ from app.fqis.integrations.api_sports.live_market_snapshot import (
     write_api_sports_live_market_snapshot,
 )
 
+from app.fqis.integrations.api_sports.inplay_fixtures import (
+    ApiSportsInplayFixture,
+    ApiSportsInplayFixtures,
+    ApiSportsInplayFixturesConfig,
+    ApiSportsInplayFixturesError,
+    ApiSportsRejectedInplayFixture,
+    build_api_sports_inplay_fixtures_from_payload,
+    fetch_api_sports_inplay_fixtures,
+    sample_inplay_fixtures_payload,
+    write_api_sports_inplay_fixtures,
+)
+
 from app.fqis.integrations.api_sports.inplay_live_odds_candidates import (
     ApiSportsInplayLiveOddsCandidate,
     ApiSportsInplayLiveOddsCandidates,
@@ -230,4 +242,3 @@ from app.fqis.integrations.api_sports.inplay_live_odds_candidates import (
     sample_inplay_live_odds_payload,
     write_api_sports_inplay_live_odds_candidates,
 )
-
