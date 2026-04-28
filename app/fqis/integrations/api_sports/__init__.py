@@ -175,3 +175,15 @@ from app.fqis.integrations.api_sports.paper_preview import (
     write_api_sports_paper_preview,
 )
 
+from app.fqis.integrations.api_sports.paper_candidates import (
+    ApiSportsPaperCandidateConfig,
+    ApiSportsPaperCandidateRecord,
+    ApiSportsPaperCandidates,
+    ApiSportsPaperCandidatesError,
+    ApiSportsRejectedPaperCandidate,
+    build_api_sports_paper_candidates,
+    default_paper_candidates_path,
+    sample_paper_candidate_inputs,
+    write_api_sports_paper_candidates,
+)
+
