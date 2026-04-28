@@ -208,3 +208,15 @@ from app.fqis.integrations.api_sports.live_paper_candidates import (
     write_api_sports_live_paper_candidates,
 )
 
+from app.fqis.integrations.api_sports.live_market_snapshot import (
+    ApiSportsLiveMarketOffer,
+    ApiSportsLiveMarketSnapshot,
+    ApiSportsLiveMarketSnapshotConfig,
+    ApiSportsLiveMarketSnapshotError,
+    ApiSportsLiveMarketSnapshotRow,
+    ApiSportsRejectedLiveMarketOffer,
+    build_api_sports_live_market_snapshot,
+    render_api_sports_live_market_snapshot_markdown,
+    write_api_sports_live_market_snapshot,
+)
+
