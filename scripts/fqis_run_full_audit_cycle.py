@@ -27,6 +27,7 @@ REPORT_PATHS = {
     "final_pipeline_audit": ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_final_pipeline_audit.json",
     "bucket_alpha_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_alpha_audit.json",
     "bucket_policy_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json",
+    "bucket_quarantine_dry_run": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json",
 }
 
 
@@ -108,6 +109,8 @@ def write_master_report(payload: dict[str, Any]) -> None:
     bucket_policy = reports.get("bucket_policy_audit", {})
     bucket_policies = bucket_policy.get("buckets") or {}
 
+    bucket_quarantine = reports.get("bucket_quarantine_dry_run", {})
+
     lines = [
         "# FQIS Full Cycle Report",
         "",
@@ -168,6 +171,14 @@ def write_master_report(payload: dict[str, Any]) -> None:
             f"| {bucket} | {m.get('action')} | {m.get('settled')} | {m.get('roi')} | {m.get('pnl')} | {m.get('win_rate')} |"
             for bucket, m in sorted(bucket_policies.items())
         ],
+        "",
+        "## Bucket Quarantine Dry Run",
+        "",
+        f"- Mode: **{bucket_quarantine.get('mode', 'UNKNOWN')}**",
+        f"- Rows total: **{bucket_quarantine.get('rows_total', 0)}**",
+        f"- Would keep: **{bucket_quarantine.get('would_keep', 0)}**",
+        f"- Would quarantine: **{bucket_quarantine.get('would_quarantine', 0)}**",
+        f"- Would quarantine rate: **{pct(bucket_quarantine.get('would_quarantine_rate', 0))}**",
         "",
         "## Research Pipeline",
         "",
@@ -473,6 +484,7 @@ def main() -> int:
         ("11_level3_invariant_report", "fqis_level3_invariant_report.py"),
         ("12_bucket_alpha_audit", "fqis_bucket_alpha_audit.py"),
         ("13_bucket_policy_audit", "fqis_bucket_policy_audit.py"),
+        ("14_bucket_quarantine_dry_run", "fqis_bucket_quarantine_dry_run.py"),
     ]
 
     for label, script in scripts:
