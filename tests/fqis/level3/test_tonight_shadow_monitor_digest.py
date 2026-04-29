@@ -51,12 +51,18 @@ def test_tonight_shadow_monitor_summary_and_digest_are_paper_only():
     assert summary["all_ledger_preserved"] is True
     assert summary["any_real_bets_enabled"] is False
     assert summary["any_live_staking_enabled"] is False
+    assert "total_new_paper_alerts" in summary
+    assert "total_repeated_paper_alerts" in summary
+    assert "unique_operator_states" in summary
 
     digest = json.loads(DIGEST_JSON.read_text(encoding="utf-8"))
     assert digest["verdict"] in {
         "SHADOW_SESSION_CLEAN",
         "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW",
+        "SHADOW_SESSION_CLEAN_WITH_PAPER_ALERTS",
         "SHADOW_SESSION_STOPPED",
         "SHADOW_SESSION_INVALID",
     }
+    assert "final_operator_state" in digest
+    assert "total_new_paper_alerts" in digest
     assert digest["any_real_bets_enabled"] is False

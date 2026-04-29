@@ -15,6 +15,12 @@ python scripts/fqis_go_no_go_report.py
 python scripts/fqis_shadow_readiness_report.py
 ```
 
+One-cycle sanity command:
+
+```powershell
+python scripts/fqis_tonight_shadow_monitor.py --cycles 1 --sleep-seconds 0 --discord --quiet --tail-lines 20
+```
+
 ## 10-Minute Monitoring Loop
 
 ```powershell
@@ -44,6 +50,20 @@ python scripts/fqis_tonight_shadow_digest.py
 Get-Content data\pipeline\api_sports\orchestrator\latest_tonight_shadow_digest.md
 ```
 
+## Operator Console
+
+```powershell
+python scripts/fqis_operator_shadow_console.py
+Get-Content data\pipeline\api_sports\orchestrator\latest_operator_shadow_console.md
+```
+
+## Paper Signal Export
+
+```powershell
+python scripts/fqis_paper_signal_export.py
+Get-Content data\pipeline\api_sports\orchestrator\latest_paper_signal_export.md
+```
+
 ## Freshness Audit
 
 ```powershell
@@ -60,28 +80,38 @@ Get-Content data\pipeline\api_sports\orchestrator\latest_live_freshness_report.m
 - `data/pipeline/api_sports/orchestrator/latest_shadow_readiness_report.json`
 - `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`
 - `data/pipeline/api_sports/orchestrator/latest_live_freshness_report.md`
+- `data/pipeline/api_sports/orchestrator/latest_operator_shadow_console.md`
+- `data/pipeline/api_sports/orchestrator/latest_paper_signal_export.md`
+- `data/pipeline/api_sports/orchestrator/latest_discord_paper_payload.md`
 - `data/pipeline/api_sports/decision_bridge_live/latest_live_decisions.json`
 
 ## Red Lines
 
 - Do not bet real money.
 - Do not flip `live_staking_allowed`.
-- Do not set `enforce_quarantine` true tonight.
+- Do not set `enforce_quarantine` true.
 - Do not mutate `research_candidates_ledger.csv`.
+- Do not interpret paper alerts as betting instructions.
+- Do not run any bookmaker execution.
 
 ## Green Means
 
+- Operator state is `PAPER_READY` or `PAPER_REVIEW`.
 - Full cycle status is `READY`.
-- Go/no-go is dry-run only.
+- Go/no-go is `NO_GO_DRY_RUN_ONLY`.
 - Shadow readiness is `SHADOW_READY`.
-- Post-quarantine ROI is positive.
 - Research candidates ledger preserved is `true`.
+- `can_execute_real_bets` is `false`.
+- `can_enable_live_staking` is `false`.
+- `live_staking_allowed` is `false`.
 
 ## Stop Means
 
+- Operator state is `PAPER_BLOCKED`.
+- Monitor status is `STOPPED`.
 - Full cycle status is `PARTIAL_FAILURE`.
 - Research candidates ledger preserved is `false`.
 - `live_staking_allowed` is `true`.
 - `can_execute_real_bets` is `true`.
 - `go_no_go_state` is `LIVE_READY`.
-- Final pipeline fields are missing.
+- `promotion_allowed` is `true`.

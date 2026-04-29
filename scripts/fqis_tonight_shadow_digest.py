@@ -12,6 +12,9 @@ MONITOR_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
 FULL_CYCLE_JSON = ORCH_DIR / "latest_full_cycle_report.json"
 SHADOW_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
+OPERATOR_CONSOLE_JSON = ORCH_DIR / "latest_operator_shadow_console.json"
+PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
+DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_digest.json"
 OUT_MD = ORCH_DIR / "latest_tonight_shadow_digest.md"
 FULL_CYCLE_MD = ORCH_DIR / "latest_full_cycle_report.md"
@@ -77,6 +80,11 @@ def build_recommendations(verdict: str, stopped_reason: str, freshness_flags: li
             "Continue paper-only shadow monitoring. Do not enable real staking.",
             f"Review live freshness flags before interpreting research performance: {flags}.",
         ]
+    if verdict == "SHADOW_SESSION_CLEAN_WITH_PAPER_ALERTS":
+        return [
+            "Continue paper-only shadow monitoring. Treat paper alerts as observation only.",
+            "Do not place real bets, size stakes, or enable live staking.",
+        ]
     reason = stopped_reason or "NONE"
     return [
         f"Stopped reason: {reason}. Inspect {FULL_CYCLE_MD.relative_to(ROOT)}.",
@@ -88,6 +96,9 @@ def build_digest() -> dict[str, Any]:
     full_cycle = read_json(FULL_CYCLE_JSON)
     shadow_report = read_json(SHADOW_JSON)
     live_freshness_report = read_json(LIVE_FRESHNESS_JSON)
+    operator_console = read_json(OPERATOR_CONSOLE_JSON)
+    paper_dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
+    discord_payload = read_json(DISCORD_PAPER_PAYLOAD_JSON)
 
     rows = monitor.get("rows") or []
     if not isinstance(rows, list):
@@ -102,6 +113,7 @@ def build_digest() -> dict[str, Any]:
     go_no_go_report = reports.get("go_no_go") or {}
     shadow_from_full_cycle = reports.get("shadow_readiness") or {}
     live_freshness_from_full_cycle = reports.get("live_freshness") or {}
+    operator_from_full_cycle = reports.get("operator_shadow_console") or {}
     daily_audit = reports.get("daily_audit") or {}
     daily_verdict = daily_audit.get("verdict") or {}
     invariants = full_cycle.get("invariants") or {}
@@ -140,6 +152,31 @@ def build_digest() -> dict[str, Any]:
         or go_no_go_report.get("promotion_allowed") is True
         or daily_verdict.get("promotion_allowed") is True
     )
+    final_operator_state = (
+        operator_console.get("operator_state")
+        or operator_from_full_cycle.get("operator_state")
+        or final_row.get("operator_state")
+    )
+    total_new_paper_alerts = summary.get("total_new_paper_alerts")
+    if total_new_paper_alerts is None:
+        total_new_paper_alerts = sum(int(row.get("new_paper_alerts") or 0) for row in rows)
+        if not rows:
+            total_new_paper_alerts = paper_dedupe.get("new_alerts", 0)
+    total_repeated_paper_alerts = summary.get("total_repeated_paper_alerts")
+    if total_repeated_paper_alerts is None:
+        total_repeated_paper_alerts = sum(int(row.get("repeated_paper_alerts") or 0) for row in rows)
+        if not rows:
+            total_repeated_paper_alerts = paper_dedupe.get("repeated_alerts", 0)
+    any_sendable_discord_payload = (
+        summary.get("any_sendable_discord_payload") is True
+        or any(row.get("sendable_discord_payload") is True for row in rows)
+        or discord_payload.get("sendable") is True
+    )
+    final_paper_signals_total = (
+        final_row.get("paper_signals_total")
+        if final_row.get("paper_signals_total") is not None
+        else operator_console.get("total_paper_signals")
+    )
 
     unsafe_flags = (
         ledger_preserved_final is not True
@@ -147,6 +184,7 @@ def build_digest() -> dict[str, Any]:
         or any_real_bets_enabled
         or any_live_staking_enabled
         or any_promotion_allowed
+        or final_operator_state == "PAPER_BLOCKED"
     )
 
     final_live_freshness_status = (
@@ -165,16 +203,17 @@ def build_digest() -> dict[str, Any]:
     if total_new_snapshots_appended is None:
         total_new_snapshots_appended = sum(int(row.get("new_snapshots_appended") or 0) for row in rows)
 
+    clean_session = monitor_status in {"READY", "MANUALLY_INTERRUPTED"} and not unsafe_flags and cycles_completed > 0
+
     if monitor_status == "STOPPED":
         verdict = "SHADOW_SESSION_STOPPED"
-    elif (
-        monitor_status in {"READY", "MANUALLY_INTERRUPTED"}
-        and not unsafe_flags
-        and cycles_completed > 0
-        and (final_live_freshness_status == "STALE_REVIEW" or bool(review_freshness_flags))
-    ):
+    elif unsafe_flags:
+        verdict = "SHADOW_SESSION_INVALID"
+    elif clean_session and int(total_new_paper_alerts or 0) > 0:
+        verdict = "SHADOW_SESSION_CLEAN_WITH_PAPER_ALERTS"
+    elif clean_session and (final_live_freshness_status == "STALE_REVIEW" or bool(review_freshness_flags)):
         verdict = "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW"
-    elif monitor_status in {"READY", "MANUALLY_INTERRUPTED"} and not unsafe_flags and cycles_completed > 0:
+    elif clean_session:
         verdict = "SHADOW_SESSION_CLEAN"
     else:
         verdict = "SHADOW_SESSION_INVALID"
@@ -193,11 +232,16 @@ def build_digest() -> dict[str, Any]:
             or shadow_from_full_cycle.get("shadow_state")
             or final_row.get("shadow_state")
         ),
+        "final_operator_state": final_operator_state,
         "ledger_preserved_final": ledger_preserved_final,
         "all_ledger_preserved": all_ledger_preserved,
         "any_real_bets_enabled": any_real_bets_enabled,
         "any_live_staking_enabled": any_live_staking_enabled,
         "any_promotion_allowed": any_promotion_allowed,
+        "total_new_paper_alerts": total_new_paper_alerts,
+        "total_repeated_paper_alerts": total_repeated_paper_alerts,
+        "any_sendable_discord_payload": any_sendable_discord_payload,
+        "final_paper_signals_total": final_paper_signals_total,
         "min_post_quarantine_pnl": summary_value(summary, rows, "min_post_quarantine_pnl"),
         "max_post_quarantine_pnl": summary_value(summary, rows, "max_post_quarantine_pnl"),
         "min_post_quarantine_roi": summary_value(summary, rows, "min_post_quarantine_roi"),
@@ -221,11 +265,16 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "final_full_cycle_status",
         "final_go_no_go_state",
         "final_shadow_state",
+        "final_operator_state",
         "ledger_preserved_final",
         "all_ledger_preserved",
         "any_real_bets_enabled",
         "any_live_staking_enabled",
         "any_promotion_allowed",
+        "total_new_paper_alerts",
+        "total_repeated_paper_alerts",
+        "any_sendable_discord_payload",
+        "final_paper_signals_total",
         "min_post_quarantine_pnl",
         "max_post_quarantine_pnl",
         "min_post_quarantine_roi",

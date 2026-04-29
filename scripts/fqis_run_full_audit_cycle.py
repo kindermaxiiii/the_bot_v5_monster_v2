@@ -43,6 +43,10 @@ REPORT_PATHS = {
     "go_no_go": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json",
     "shadow_readiness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_readiness_report.json",
     "live_freshness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_freshness_report.json",
+    "paper_signal_export": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_signal_export.json",
+    "paper_alert_dedupe": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_dedupe.json",
+    "discord_paper_payload": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_discord_paper_payload.json",
+    "operator_shadow_console": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.json",
 }
 
 
@@ -222,6 +226,10 @@ def write_master_report(payload: dict[str, Any]) -> None:
     shadow_post = shadow.get("post_quarantine") or {}
     freshness = reports.get("live_freshness", {})
     freshness_flags = freshness.get("freshness_flags") or []
+    paper_export = reports.get("paper_signal_export", {})
+    paper_dedupe = reports.get("paper_alert_dedupe", {})
+    discord_payload = reports.get("discord_paper_payload", {})
+    operator_console = reports.get("operator_shadow_console", {})
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -285,6 +293,38 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- New snapshots appended: **{freshness.get('new_snapshots_appended', 0)}**",
         f"- Ledger rows total: **{freshness.get('ledger_rows_total', 0)}**",
         f"- Freshness flags: **{', '.join(str(flag) for flag in freshness_flags) if freshness_flags else 'NONE'}**",
+        "",
+        "## Paper Signal Export",
+        "",
+        f"- Status: **{paper_export.get('status', 'UNKNOWN')}**",
+        f"- Total paper signals: **{paper_export.get('paper_signals_total', paper_export.get('total_decisions', 0))}**",
+        f"- Paper production sim-only: **{paper_export.get('paper_production_sim_only_count', 0)}**",
+        f"- Paper research watch: **{paper_export.get('paper_research_watch_count', 0)}**",
+        f"- Paper rejected: **{paper_export.get('paper_rejected_count', 0)}**",
+        f"- Can execute real bets: **{(paper_export.get('safety') or {}).get('can_execute_real_bets', False)}**",
+        "",
+        "## Paper Alert Dedupe",
+        "",
+        f"- Status: **{paper_dedupe.get('status', 'UNKNOWN')}**",
+        f"- New paper alerts: **{paper_dedupe.get('new_alerts', 0)}**",
+        f"- Repeated paper alerts: **{paper_dedupe.get('repeated_alerts', 0)}**",
+        f"- Suppressed repeats: **{paper_dedupe.get('suppressed_repeats', 0)}**",
+        f"- State size: **{paper_dedupe.get('state_size', 0)}**",
+        "",
+        "## Discord Paper Payload",
+        "",
+        f"- Status: **{discord_payload.get('status', 'UNKNOWN')}**",
+        f"- Sendable: **{discord_payload.get('sendable', False)}**",
+        f"- Send reason: **{discord_payload.get('send_reason', 'UNKNOWN')}**",
+        f"- Discord send performed: **{discord_payload.get('discord_send_performed', False)}**",
+        "",
+        "## Operator Shadow Console",
+        "",
+        f"- Status: **{operator_console.get('status', 'UNKNOWN')}**",
+        f"- Operator state: **{operator_console.get('operator_state', 'UNKNOWN')}**",
+        f"- Next action: **{operator_console.get('next_action', 'UNKNOWN')}**",
+        f"- Total paper signals: **{operator_console.get('total_paper_signals', 0)}**",
+        f"- New paper alerts: **{operator_console.get('new_paper_alerts', 0)}**",
         "",
         "## Final Verdict",
         "",
@@ -666,63 +706,98 @@ def main() -> int:
         ("16_go_no_go_report", "fqis_go_no_go_report.py"),
         ("17_shadow_readiness_report", "fqis_shadow_readiness_report.py"),
         ("18_live_freshness_report", "fqis_live_freshness_report.py"),
+        ("19_paper_signal_export", "fqis_paper_signal_export.py"),
+        ("20_paper_alert_dedupe", "fqis_paper_alert_dedupe.py"),
+        ("21_discord_paper_payload", "fqis_discord_paper_payload.py"),
+        ("22_operator_shadow_console", "fqis_operator_shadow_console.py"),
     ]
 
-    for label, script in scripts[:-2]:
-        steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
-
-    reports = read_reports(exclude={"shadow_readiness", "live_freshness"})
-    ledger_restore = restore_file(ledger_snapshot)
-    status = cycle_status(steps, ledger_restore)
     generated_at_utc = utc_now()
 
-    payload = build_payload(
-        status=status,
-        generated_at_utc=generated_at_utc,
-        run_dir=run_dir,
-        steps=steps,
-        reports=reports,
-        ledger_restore=ledger_restore,
-    )
-    write_latest_payload(payload)
+    def write_stage(exclude: set[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, Any]]:
+        stage_reports = read_reports(exclude=exclude)
+        stage_ledger_restore = restore_file(ledger_snapshot)
+        stage_status = cycle_status(steps, stage_ledger_restore)
+        stage_payload = build_payload(
+            status=stage_status,
+            generated_at_utc=generated_at_utc,
+            run_dir=run_dir,
+            steps=steps,
+            reports=stage_reports,
+            ledger_restore=stage_ledger_restore,
+        )
+        write_latest_payload(stage_payload)
+        return stage_reports, stage_ledger_restore, stage_status, stage_payload
 
-    shadow_label, shadow_script = scripts[-2]
+    for label, script in scripts[:15]:
+        steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
+
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "shadow_readiness",
+            "live_freshness",
+            "paper_signal_export",
+            "paper_alert_dedupe",
+            "discord_paper_payload",
+            "operator_shadow_console",
+        }
+    )
+
+    shadow_label, shadow_script = scripts[15]
     steps.append(run_step(shadow_label, [CHILD_PYTHON, str(ROOT / "scripts" / shadow_script)], run_dir))
 
-    reports = read_reports(exclude={"live_freshness"})
-    ledger_restore = restore_file(ledger_snapshot)
-    status = cycle_status(steps, ledger_restore)
-    payload = build_payload(
-        status=status,
-        generated_at_utc=generated_at_utc,
-        run_dir=run_dir,
-        steps=steps,
-        reports=reports,
-        ledger_restore=ledger_restore,
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "live_freshness",
+            "paper_signal_export",
+            "paper_alert_dedupe",
+            "discord_paper_payload",
+            "operator_shadow_console",
+        }
     )
-    write_latest_payload(payload)
 
-    freshness_label, freshness_script = scripts[-1]
+    freshness_label, freshness_script = scripts[16]
     steps.append(run_step(freshness_label, [CHILD_PYTHON, str(ROOT / "scripts" / freshness_script)], run_dir))
 
-    reports = read_reports()
-    ledger_restore = restore_file(ledger_snapshot)
-    status = cycle_status(steps, ledger_restore)
-    payload = build_payload(
-        status=status,
-        generated_at_utc=generated_at_utc,
-        run_dir=run_dir,
-        steps=steps,
-        reports=reports,
-        ledger_restore=ledger_restore,
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "paper_signal_export",
+            "paper_alert_dedupe",
+            "discord_paper_payload",
+            "operator_shadow_console",
+        }
     )
-    write_latest_payload(payload)
+
+    paper_label, paper_script = scripts[17]
+    steps.append(run_step(paper_label, [CHILD_PYTHON, str(ROOT / "scripts" / paper_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={"paper_alert_dedupe", "discord_paper_payload", "operator_shadow_console"}
+    )
+
+    dedupe_label, dedupe_script = scripts[18]
+    steps.append(run_step(dedupe_label, [CHILD_PYTHON, str(ROOT / "scripts" / dedupe_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={"discord_paper_payload", "operator_shadow_console"}
+    )
+
+    discord_label, discord_script = scripts[19]
+    steps.append(run_step(discord_label, [CHILD_PYTHON, str(ROOT / "scripts" / discord_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console"})
+
+    operator_label, operator_script = scripts[20]
+    steps.append(run_step(operator_label, [CHILD_PYTHON, str(ROOT / "scripts" / operator_script)], run_dir))
+
+    reports, ledger_restore, status, payload = write_stage()
     write_master_report(payload)
 
     verdict = ((reports.get("daily_audit") or {}).get("verdict") or {})
     go_no_go = reports.get("go_no_go") or {}
     shadow = reports.get("shadow_readiness") or {}
     freshness = reports.get("live_freshness") or {}
+    operator_console = reports.get("operator_shadow_console") or {}
+    paper_export = reports.get("paper_signal_export") or {}
+    paper_dedupe = reports.get("paper_alert_dedupe") or {}
+    discord_payload = reports.get("discord_paper_payload") or {}
 
     print(json.dumps({
         "status": status,
@@ -731,6 +806,10 @@ def main() -> int:
         "promotion_allowed": verdict.get("promotion_allowed"),
         "shadow_state": shadow.get("shadow_state"),
         "live_freshness_status": freshness.get("status"),
+        "operator_state": operator_console.get("operator_state"),
+        "paper_signals_total": paper_export.get("paper_signals_total") or paper_export.get("total_decisions"),
+        "new_paper_alerts": paper_dedupe.get("new_alerts"),
+        "sendable_discord_payload": discord_payload.get("sendable"),
         "run_dir": str(run_dir),
         "latest_md": str(LATEST_MD),
         "latest_json": str(LATEST_JSON),

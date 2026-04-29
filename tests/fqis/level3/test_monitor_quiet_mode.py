@@ -80,14 +80,20 @@ def test_quiet_monitor_writes_cycle_logs_digest_runs_and_preserves_ledger():
     assert "stderr_tail" in row
     assert row["can_execute_real_bets"] is False
     assert row["live_staking_allowed"] is False
+    assert row["operator_state"] in {"PAPER_READY", "PAPER_REVIEW", "PAPER_BLOCKED"}
+    assert "paper_signals_total" in row
+    assert "new_paper_alerts" in row
 
     digest = json.loads(DIGEST_JSON.read_text(encoding="utf-8"))
     assert digest["verdict"] in {
         "SHADOW_SESSION_CLEAN",
         "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW",
+        "SHADOW_SESSION_CLEAN_WITH_PAPER_ALERTS",
         "SHADOW_SESSION_STOPPED",
         "SHADOW_SESSION_INVALID",
     }
+    assert "final_operator_state" in digest
+    assert "total_new_paper_alerts" in digest
     assert digest["any_real_bets_enabled"] is False
 
 
