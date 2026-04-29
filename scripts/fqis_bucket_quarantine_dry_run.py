@@ -5,29 +5,18 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from fqis_governance_policy import policy_snapshot, read_policy_config, require_dry_run_policy
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "research_candidates_ledger.csv"
-CONFIG = ROOT / "config" / "fqis_bucket_policy.json"
 POLICY_AUDIT = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json"
 OUT = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json"
 
 
-def load_policy_config() -> dict:
-    config = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
-    if config.get("dry_run") is not True:
-        raise RuntimeError("fqis bucket quarantine requires dry_run=true")
-    if config.get("enforce_quarantine") is not False:
-        raise RuntimeError("fqis bucket quarantine dry run cannot enforce quarantine")
-    if config.get("ledger_mutation_allowed") is not False:
-        raise RuntimeError("fqis bucket quarantine dry run cannot mutate the ledger")
-    if config.get("live_staking_allowed") is not False:
-        raise RuntimeError("fqis bucket quarantine dry run cannot allow live staking")
-    return config
-
-
 def main() -> int:
-    config = load_policy_config()
+    config = read_policy_config()
+    require_dry_run_policy(config, "fqis bucket quarantine dry run")
     policy = json.loads(POLICY_AUDIT.read_text(encoding="utf-8"))
     bucket_actions = {
         bucket: meta.get("action")
@@ -56,14 +45,7 @@ def main() -> int:
     payload = {
         "status": "READY",
         "mode": "DRY_RUN_ONLY_NO_LEDGER_MUTATION",
-        "policy_config": {
-            "version": config.get("version"),
-            "mode": config.get("mode"),
-            "dry_run": config.get("dry_run"),
-            "enforce_quarantine": config.get("enforce_quarantine"),
-            "ledger_mutation_allowed": config.get("ledger_mutation_allowed"),
-            "live_staking_allowed": config.get("live_staking_allowed"),
-        },
+        "policy": policy_snapshot(config),
         "rows_total": rows_total,
         "would_keep": would_keep,
         "would_quarantine": would_quarantine,

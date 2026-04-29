@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fqis_governance_policy import policy_safety_reasons, policy_snapshot, read_policy_config
+
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config" / "fqis_bucket_policy.json"
 DAILY_AUDIT = ROOT / "data" / "pipeline" / "api_sports" / "audit" / "latest_daily_audit_report.json"
 FINAL_PIPELINE = ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_final_pipeline_audit.json"
 OUT = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json"
@@ -27,7 +28,7 @@ def read_json(path: Path, encoding: str = "utf-8") -> dict[str, Any]:
 
 
 def main() -> int:
-    config = read_json(CONFIG, encoding="utf-8-sig")
+    config = read_policy_config()
     daily = read_json(DAILY_AUDIT)
     final_pipeline = read_json(FINAL_PIPELINE)
 
@@ -38,12 +39,7 @@ def main() -> int:
     live_staking_allowed = config.get("live_staking_allowed") is True
     simulation_only = not live_staking_allowed
 
-    if config.get("dry_run") is not True:
-        reasons.append("CONFIG_DRY_RUN_NOT_TRUE")
-    if config.get("enforce_quarantine") is not False:
-        reasons.append("CONFIG_ENFORCE_QUARANTINE_NOT_FALSE")
-    if config.get("ledger_mutation_allowed") is not False:
-        reasons.append("CONFIG_LEDGER_MUTATION_NOT_FALSE")
+    reasons.extend(policy_safety_reasons(config))
     if not promotion_allowed:
         reasons.append("PROMOTION_NOT_ALLOWED")
     if not live_staking_allowed:
@@ -56,15 +52,13 @@ def main() -> int:
     for flag in verdict.get("flags") or []:
         reasons.append(str(flag))
 
-    go_no_go_state = "LIVE_READY" if promotion_allowed and live_staking_allowed and not reasons else "NO_GO_DRY_RUN_ONLY"
-    if go_no_go_state == "LIVE_READY" and not live_staking_allowed:
-        go_no_go_state = "NO_GO_DRY_RUN_ONLY"
-        reasons.append("LIVE_READY_BLOCKED_BY_LIVE_STAKING_FALSE")
+    go_no_go_state = "NO_GO_DRY_RUN_ONLY"
 
     payload = {
         "status": "READY",
         "generated_at_utc": utc_now(),
         "go_no_go_state": go_no_go_state,
+        "policy": policy_snapshot(config),
         "reasons": sorted(set(reasons)),
         "promotion_allowed": promotion_allowed,
         "live_staking_allowed": live_staking_allowed,

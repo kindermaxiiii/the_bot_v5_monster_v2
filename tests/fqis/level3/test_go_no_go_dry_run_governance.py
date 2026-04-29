@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 LEDGER = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "research_candidates_ledger.csv"
 GO_NO_GO = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json"
+BUCKET_QUARANTINE = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json"
+POST_QUARANTINE = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_post_quarantine_pnl_simulation.json"
 
 
 def sha256(path: Path) -> str:
@@ -40,12 +42,19 @@ def test_quarantine_scripts_do_not_mutate_research_candidates_ledger():
 
     run_script("fqis_bucket_quarantine_dry_run.py")
     after_quarantine = sha256(LEDGER)
+    quarantine = json.loads(BUCKET_QUARANTINE.read_text(encoding="utf-8"))
 
     run_script("fqis_post_quarantine_pnl_simulation.py")
     after_pnl_simulation = sha256(LEDGER)
+    pnl_simulation = json.loads(POST_QUARANTINE.read_text(encoding="utf-8"))
 
     assert after_quarantine == before
     assert after_pnl_simulation == before
+    for payload in [quarantine, pnl_simulation]:
+        assert payload["policy"]["dry_run"] is True
+        assert payload["policy"]["enforce_quarantine"] is False
+        assert payload["policy"]["ledger_mutation_allowed"] is False
+        assert payload["policy"]["live_staking_allowed"] is False
 
 
 def test_go_no_go_report_blocks_live_ready_while_live_staking_false():
@@ -57,6 +66,8 @@ def test_go_no_go_report_blocks_live_ready_while_live_staking_false():
     assert payload["live_staking_allowed"] is False
     assert payload["simulation_only"] is True
     assert payload["go_no_go_state"] != "LIVE_READY"
+    assert payload["policy"]["live_staking_allowed"] is False
     assert "CONFIG_DRY_RUN_NOT_TRUE" not in payload["reasons"]
     assert "CONFIG_ENFORCE_QUARANTINE_NOT_FALSE" not in payload["reasons"]
     assert "CONFIG_LEDGER_MUTATION_NOT_FALSE" not in payload["reasons"]
+    assert "CONFIG_LIVE_STAKING_NOT_FALSE" not in payload["reasons"]

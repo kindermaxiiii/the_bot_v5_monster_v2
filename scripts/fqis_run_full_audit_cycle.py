@@ -41,6 +41,7 @@ REPORT_PATHS = {
     "bucket_quarantine_dry_run": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json",
     "post_quarantine_pnl_simulation": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_post_quarantine_pnl_simulation.json",
     "go_no_go": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json",
+    "shadow_readiness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_readiness_report.json",
 }
 
 
@@ -123,6 +124,51 @@ def run_step(label: str, cmd: list[str], run_dir: Path) -> dict[str, Any]:
     }
 
 
+def read_reports(exclude: set[str] | None = None) -> dict[str, Any]:
+    excluded = exclude or set()
+    return {
+        name: read_json(path)
+        for name, path in REPORT_PATHS.items()
+        if name not in excluded
+    }
+
+
+def cycle_status(steps: list[dict[str, Any]], ledger_restore: dict[str, Any]) -> str:
+    return "READY" if all(s["ok"] for s in steps) and ledger_restore["preserved"] else "PARTIAL_FAILURE"
+
+
+def build_payload(
+    *,
+    status: str,
+    generated_at_utc: str,
+    run_dir: Path,
+    steps: list[dict[str, Any]],
+    reports: dict[str, Any],
+    ledger_restore: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "mode": "FQIS_FULL_CYCLE_ORCHESTRATOR",
+        "status": status,
+        "generated_at_utc": generated_at_utc,
+        "run_dir": str(run_dir),
+        "steps": steps,
+        "reports": reports,
+        "invariants": {
+            "research_candidates_ledger_preserved": ledger_restore["preserved"],
+            "research_candidates_ledger": ledger_restore,
+            "live_staking_enabled": False,
+            "simulation_only": True,
+        },
+        "latest_md": str(LATEST_MD),
+        "latest_json": str(LATEST_JSON),
+    }
+
+
+def write_latest_payload(payload: dict[str, Any]) -> None:
+    LATEST_JSON.parent.mkdir(parents=True, exist_ok=True)
+    LATEST_JSON.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+
+
 def pct(x: Any) -> str:
     try:
         return f"{float(x):.2%}"
@@ -170,6 +216,9 @@ def write_master_report(payload: dict[str, Any]) -> None:
     pq_removed = post_quarantine.get("removed_by_quarantine") or {}
     pq_delta = post_quarantine.get("delta") or {}
     go_no_go = reports.get("go_no_go", {})
+    shadow = reports.get("shadow_readiness", {})
+    shadow_base = shadow.get("baseline") or {}
+    shadow_post = shadow.get("post_quarantine") or {}
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -197,6 +246,30 @@ def write_master_report(payload: dict[str, Any]) -> None:
         lines.append("- No go/no-go reasons found.")
     else:
         for reason in go_no_go_reasons:
+            lines.append(f"- {reason}")
+
+    lines += [
+        "",
+        "## Shadow Readiness",
+        "",
+        f"- State: **{shadow.get('shadow_state', 'UNKNOWN')}**",
+        f"- Status: **{shadow.get('status', 'UNKNOWN')}**",
+        f"- Can publish Discord paper-only: **{shadow.get('can_publish_to_discord_paper_only', False)}**",
+        f"- Can execute real bets: **{shadow.get('can_execute_real_bets', False)}**",
+        f"- Can mutate ledger: **{shadow.get('can_mutate_ledger', False)}**",
+        f"- Can enable live staking: **{shadow.get('can_enable_live_staking', False)}**",
+        f"- Baseline PnL / ROI: **{shadow_base.get('pnl', 0)}u / {shadow_base.get('roi', 0)}**",
+        f"- Post-quarantine PnL / ROI: **{shadow_post.get('pnl', 0)}u / {shadow_post.get('roi', 0)}**",
+        "",
+        "### Shadow Reasons",
+        "",
+    ]
+
+    shadow_reasons = shadow.get("reasons") or []
+    if not shadow_reasons:
+        lines.append("- No shadow readiness reasons found.")
+    else:
+        for reason in shadow_reasons:
             lines.append(f"- {reason}")
 
     lines += [
@@ -579,44 +652,54 @@ def main() -> int:
         ("14_bucket_quarantine_dry_run", "fqis_bucket_quarantine_dry_run.py"),
         ("15_post_quarantine_pnl_simulation", "fqis_post_quarantine_pnl_simulation.py"),
         ("16_go_no_go_report", "fqis_go_no_go_report.py"),
+        ("17_shadow_readiness_report", "fqis_shadow_readiness_report.py"),
     ]
 
-    for label, script in scripts:
+    for label, script in scripts[:-1]:
         steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
 
-    reports = {name: read_json(path) for name, path in REPORT_PATHS.items()}
-
+    reports = read_reports(exclude={"shadow_readiness"})
     ledger_restore = restore_file(ledger_snapshot)
+    status = cycle_status(steps, ledger_restore)
+    generated_at_utc = utc_now()
 
-    status = "READY" if all(s["ok"] for s in steps) and ledger_restore["preserved"] else "PARTIAL_FAILURE"
+    payload = build_payload(
+        status=status,
+        generated_at_utc=generated_at_utc,
+        run_dir=run_dir,
+        steps=steps,
+        reports=reports,
+        ledger_restore=ledger_restore,
+    )
+    write_latest_payload(payload)
 
-    payload = {
-        "mode": "FQIS_FULL_CYCLE_ORCHESTRATOR",
-        "status": status,
-        "generated_at_utc": utc_now(),
-        "run_dir": str(run_dir),
-        "steps": steps,
-        "reports": reports,
-        "invariants": {
-            "research_candidates_ledger_preserved": ledger_restore["preserved"],
-            "research_candidates_ledger": ledger_restore,
-            "live_staking_enabled": False,
-            "simulation_only": True,
-        },
-        "latest_md": str(LATEST_MD),
-        "latest_json": str(LATEST_JSON),
-    }
+    shadow_label, shadow_script = scripts[-1]
+    steps.append(run_step(shadow_label, [CHILD_PYTHON, str(ROOT / "scripts" / shadow_script)], run_dir))
 
-    LATEST_JSON.parent.mkdir(parents=True, exist_ok=True)
-    LATEST_JSON.write_text(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    reports = read_reports()
+    ledger_restore = restore_file(ledger_snapshot)
+    status = cycle_status(steps, ledger_restore)
+    payload = build_payload(
+        status=status,
+        generated_at_utc=generated_at_utc,
+        run_dir=run_dir,
+        steps=steps,
+        reports=reports,
+        ledger_restore=ledger_restore,
+    )
+    write_latest_payload(payload)
     write_master_report(payload)
 
     verdict = ((reports.get("daily_audit") or {}).get("verdict") or {})
+    go_no_go = reports.get("go_no_go") or {}
+    shadow = reports.get("shadow_readiness") or {}
 
     print(json.dumps({
         "status": status,
         "final_verdict": verdict.get("final_verdict"),
+        "go_no_go_state": go_no_go.get("go_no_go_state"),
         "promotion_allowed": verdict.get("promotion_allowed"),
+        "shadow_state": shadow.get("shadow_state"),
         "run_dir": str(run_dir),
         "latest_md": str(LATEST_MD),
         "latest_json": str(LATEST_JSON),

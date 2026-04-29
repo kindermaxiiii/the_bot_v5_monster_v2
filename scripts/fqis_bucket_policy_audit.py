@@ -3,16 +3,17 @@
 import json
 from pathlib import Path
 
+from fqis_governance_policy import policy_snapshot, read_policy_config
+
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUT = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_alpha_audit.json"
 OUT = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json"
-CONFIG = ROOT / "config" / "fqis_bucket_policy.json"
 
 
 def main() -> int:
     payload = json.loads(INPUT.read_text(encoding="utf-8"))
-    config = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
+    config = read_policy_config()
     buckets = payload.get("buckets") or {}
 
     min_settled = int(config.get("min_settled", 20))
@@ -44,12 +45,7 @@ def main() -> int:
     out = {
         "status": "READY",
         "policy": {
-            "version": config.get("version"),
-            "mode": config.get("mode"),
-            "dry_run": config.get("dry_run"),
-            "enforce_quarantine": config.get("enforce_quarantine"),
-            "ledger_mutation_allowed": config.get("ledger_mutation_allowed"),
-            "live_staking_allowed": config.get("live_staking_allowed"),
+            **policy_snapshot(config),
             "min_settled": min_settled,
             "kill_roi": kill_roi,
             "watch_roi": watch_roi,
