@@ -15,6 +15,7 @@ ORCH_DIR = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator"
 FULL_CYCLE_JSON = ORCH_DIR / "latest_full_cycle_report.json"
 GO_NO_GO_JSON = ORCH_DIR / "latest_go_no_go_report.json"
 SHADOW_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
+LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
 OUT_MD = ORCH_DIR / "latest_tonight_shadow_monitor.md"
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -55,34 +56,99 @@ def fnum(value: Any) -> float | None:
         return None
 
 
-def run_full_cycle(discord: bool) -> int:
+def tail_text(text: str, line_count: int) -> str:
+    if line_count <= 0 or not text:
+        return ""
+    return "\n".join(text.splitlines()[-line_count:])
+
+
+def monitor_run_id() -> str:
+    return datetime.now(timezone.utc).strftime("monitor_run_%Y%m%d_%H%M%S")
+
+
+def run_full_cycle(
+    *,
+    discord: bool,
+    cycle_number: int,
+    monitor_run_dir: Path,
+    child_log_mode: str,
+    tail_lines: int,
+) -> dict[str, Any]:
     cmd = [CHILD_PYTHON, str(ROOT / "scripts" / "fqis_run_full_audit_cycle.py")]
     if discord:
         cmd.append("--discord")
 
-    proc = subprocess.run(
-        cmd,
-        cwd=str(ROOT),
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    return proc.returncode
+    monitor_run_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = monitor_run_dir / f"cycle_{cycle_number:03d}.stdout.log"
+    stderr_path = monitor_run_dir / f"cycle_{cycle_number:03d}.stderr.log"
+
+    started = time.monotonic()
+    stdout_text = ""
+    stderr_text = ""
+
+    if child_log_mode == "capture":
+        proc = subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        stdout_text = proc.stdout or ""
+        stderr_text = proc.stderr or ""
+    elif child_log_mode == "none":
+        proc = subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    else:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        stdout_text = "Child stdout inherited by monitor terminal; not captured.\n"
+        stderr_text = "Child stderr inherited by monitor terminal; not captured.\n"
+
+    duration = round(time.monotonic() - started, 3)
+    stdout_path.write_text(stdout_text, encoding="utf-8")
+    stderr_path.write_text(stderr_text, encoding="utf-8")
+
+    result: dict[str, Any] = {
+        "returncode": proc.returncode,
+        "stdout_log": str(stdout_path),
+        "stderr_log": str(stderr_path),
+        "full_cycle_duration_sec": duration,
+    }
+    if tail_lines > 0:
+        result["stdout_tail"] = tail_text(stdout_text, tail_lines)
+        result["stderr_tail"] = tail_text(stderr_text, tail_lines)
+    return result
 
 
-def build_cycle_row(cycle_number: int, returncode: int) -> dict[str, Any]:
+def build_cycle_row(cycle_number: int, run_result: dict[str, Any]) -> dict[str, Any]:
     full_cycle = read_json(FULL_CYCLE_JSON)
     go_no_go = read_json(GO_NO_GO_JSON)
     shadow = read_json(SHADOW_JSON)
+    live_freshness = read_json(LIVE_FRESHNESS_JSON)
 
     full_cycle_status = full_cycle.get("status")
+    returncode = int(run_result.get("returncode") or 0)
     if returncode != 0:
         full_cycle_status = "COMMAND_FAILED"
 
     invariants = full_cycle.get("invariants") or {}
     post_quarantine = shadow.get("post_quarantine") or {}
 
-    return {
+    row = {
         "cycle": cycle_number,
         "timestamp": utc_now(),
         "full_cycle_returncode": returncode,
@@ -97,7 +163,20 @@ def build_cycle_row(cycle_number: int, returncode: int) -> dict[str, Any]:
         "post_quarantine_pnl": fnum(post_quarantine.get("pnl")),
         "post_quarantine_roi": fnum(post_quarantine.get("roi")),
         "run_dir": full_cycle.get("run_dir"),
+        "stdout_log": run_result.get("stdout_log"),
+        "stderr_log": run_result.get("stderr_log"),
+        "full_cycle_duration_sec": run_result.get("full_cycle_duration_sec"),
+        "live_freshness_status": live_freshness.get("status"),
+        "candidates_this_cycle": live_freshness.get("candidates_this_cycle"),
+        "new_snapshots_appended": live_freshness.get("new_snapshots_appended"),
+        "decisions_total": live_freshness.get("decisions_total"),
+        "freshness_flags": live_freshness.get("freshness_flags") or [],
     }
+    if "stdout_tail" in run_result:
+        row["stdout_tail"] = run_result.get("stdout_tail")
+    if "stderr_tail" in run_result:
+        row["stderr_tail"] = run_result.get("stderr_tail")
+    return row
 
 
 def stop_reason(row: dict[str, Any]) -> str:
@@ -145,6 +224,7 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     pnl_values = numeric_values(rows, "post_quarantine_pnl")
     roi_values = numeric_values(rows, "post_quarantine_roi")
+    candidate_values = numeric_values(rows, "candidates_this_cycle")
 
     return {
         "first_timestamp": first_timestamp,
@@ -166,6 +246,12 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             for row in rows
         ),
         "any_promotion_allowed": any(row.get("promotion_allowed") is True for row in rows),
+        "total_new_snapshots_appended": sum(int(row.get("new_snapshots_appended") or 0) for row in rows),
+        "min_candidates_this_cycle": min(candidate_values) if candidate_values else None,
+        "max_candidates_this_cycle": max(candidate_values) if candidate_values else None,
+        "unique_live_freshness_statuses": unique_values(rows, "live_freshness_status"),
+        "all_live_freshness_ready_or_review": bool(rows)
+        and all(row.get("live_freshness_status") in {"READY", "STALE_REVIEW"} for row in rows),
     }
 
 
@@ -176,13 +262,21 @@ def build_payload(
     rows: list[dict[str, Any]],
     discord_enabled: bool,
     stopped_reason: str,
+    monitor_run_id: str,
+    monitor_run_dir: Path,
+    quiet: bool,
+    child_log_mode: str,
 ) -> dict[str, Any]:
     return {
         "status": status,
         "generated_at_utc": utc_now(),
+        "monitor_run_id": monitor_run_id,
+        "monitor_run_dir": str(monitor_run_dir),
         "cycles_requested": cycles_requested,
         "cycles_completed": len(rows),
         "discord_enabled": discord_enabled,
+        "quiet": quiet,
+        "child_log_mode": child_log_mode,
         "stopped_reason": stopped_reason,
         "summary": build_summary(rows),
         "rows": rows,
@@ -214,15 +308,24 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "any_real_bets_enabled",
         "any_live_staking_enabled",
         "any_promotion_allowed",
+        "total_new_snapshots_appended",
+        "min_candidates_this_cycle",
+        "max_candidates_this_cycle",
+        "unique_live_freshness_statuses",
+        "all_live_freshness_ready_or_review",
     ]
 
     lines = [
         "# FQIS Tonight Shadow Monitor",
         "",
         f"- Status: **{payload['status']}**",
+        f"- Monitor run ID: **{payload['monitor_run_id']}**",
+        f"- Monitor run dir: `{payload['monitor_run_dir']}`",
         f"- Cycles requested: **{payload['cycles_requested']}**",
         f"- Cycles completed: **{payload['cycles_completed']}**",
         f"- Discord enabled: **{payload['discord_enabled']}**",
+        f"- Quiet: **{payload['quiet']}**",
+        f"- Child log mode: **{payload['child_log_mode']}**",
         f"- Stopped reason: **{payload['stopped_reason'] or 'NONE'}**",
         "",
         "## Summary",
@@ -231,13 +334,13 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         "## Cycles",
         "",
-        "| Cycle | Timestamp | Full cycle | Go/No-Go | Shadow | Promotion | Live staking | Real bets | Enable staking | Ledger | PnL | ROI |",
-        "|---:|---|---|---|---|---|---|---|---|---|---:|---:|",
+        "| Cycle | Timestamp | Full cycle | Go/No-Go | Shadow | Freshness | Decisions | Candidates | New snapshots | Promotion | Live staking | Real bets | Enable staking | Ledger | PnL | ROI | Duration sec |",
+        "|---:|---|---|---|---|---|---:|---:|---:|---|---|---|---|---|---:|---:|---:|",
     ]
 
     for row in payload["rows"]:
         lines.append(
-            "| {cycle} | {timestamp} | {full_cycle_status} | {go_no_go_state} | {shadow_state} | {promotion_allowed} | {live_staking_allowed} | {can_execute_real_bets} | {can_enable_live_staking} | {ledger_preserved} | {post_quarantine_pnl} | {post_quarantine_roi} |".format(
+            "| {cycle} | {timestamp} | {full_cycle_status} | {go_no_go_state} | {shadow_state} | {live_freshness_status} | {decisions_total} | {candidates_this_cycle} | {new_snapshots_appended} | {promotion_allowed} | {live_staking_allowed} | {can_execute_real_bets} | {can_enable_live_staking} | {ledger_preserved} | {post_quarantine_pnl} | {post_quarantine_roi} | {full_cycle_duration_sec} |".format(
                 **row
             )
         )
@@ -258,9 +361,18 @@ def main() -> int:
     parser.add_argument("--sleep-seconds", type=float, default=60)
     parser.add_argument("--discord", action="store_true")
     parser.add_argument("--stop-on-blocked", action="store_true", default=True)
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--child-log-mode", choices=["inherit", "capture", "none"], default="inherit")
+    parser.add_argument("--tail-lines", type=int, default=0)
     args = parser.parse_args()
 
     cycles_requested = max(0, args.cycles)
+    tail_lines = max(0, args.tail_lines)
+    child_log_mode = args.child_log_mode
+    if args.quiet and child_log_mode == "inherit":
+        child_log_mode = "capture"
+    run_id = monitor_run_id()
+    run_dir = ORCH_DIR / run_id
     rows: list[dict[str, Any]] = []
     status = "READY"
     stopped_reason = ""
@@ -271,14 +383,24 @@ def main() -> int:
         rows=rows,
         discord_enabled=bool(args.discord),
         stopped_reason=stopped_reason,
+        monitor_run_id=run_id,
+        monitor_run_dir=run_dir,
+        quiet=bool(args.quiet),
+        child_log_mode=child_log_mode,
     )
 
     try:
         write_outputs(payload)
 
         for index in range(cycles_requested):
-            returncode = run_full_cycle(discord=bool(args.discord))
-            row = build_cycle_row(cycle_number=index + 1, returncode=returncode)
+            run_result = run_full_cycle(
+                discord=bool(args.discord),
+                cycle_number=index + 1,
+                monitor_run_dir=run_dir,
+                child_log_mode=child_log_mode,
+                tail_lines=tail_lines,
+            )
+            row = build_cycle_row(cycle_number=index + 1, run_result=run_result)
             rows.append(row)
 
             reason = stop_reason(row)
@@ -292,6 +414,10 @@ def main() -> int:
                 rows=rows,
                 discord_enabled=bool(args.discord),
                 stopped_reason=stopped_reason,
+                monitor_run_id=run_id,
+                monitor_run_dir=run_dir,
+                quiet=bool(args.quiet),
+                child_log_mode=child_log_mode,
             )
             write_outputs(payload)
 
@@ -309,12 +435,22 @@ def main() -> int:
             rows=rows,
             discord_enabled=bool(args.discord),
             stopped_reason=stopped_reason,
+            monitor_run_id=run_id,
+            monitor_run_dir=run_dir,
+            quiet=bool(args.quiet),
+            child_log_mode=child_log_mode,
         )
         write_outputs(payload)
-        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        if args.quiet:
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        else:
+            print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
         return 130 if status == "MANUALLY_INTERRUPTED" else 2
 
-    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    if args.quiet:
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if status == "READY" else 2
 
 

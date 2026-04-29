@@ -55,6 +55,7 @@ def test_tonight_shadow_monitor_summary_and_digest_are_paper_only():
     digest = json.loads(DIGEST_JSON.read_text(encoding="utf-8"))
     assert digest["verdict"] in {
         "SHADOW_SESSION_CLEAN",
+        "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW",
         "SHADOW_SESSION_STOPPED",
         "SHADOW_SESSION_INVALID",
     }

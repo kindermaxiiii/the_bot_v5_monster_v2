@@ -22,7 +22,14 @@ python scripts/fqis_tonight_shadow_monitor.py --cycles 5 --sleep-seconds 120
 python scripts/fqis_tonight_shadow_monitor.py --cycles 5 --sleep-seconds 120 --discord
 ```
 
+Recommended long evening command:
+
+```powershell
+python scripts/fqis_tonight_shadow_monitor.py --cycles 180 --sleep-seconds 120 --discord --quiet --tail-lines 20
+```
+
 - Use `--discord` only for paper-only alerts.
+- Use `--quiet` to capture full-cycle child output in per-cycle logs under `data/pipeline/api_sports/orchestrator/monitor_run_*`.
 - Stop if monitor status is `STOPPED`.
 - Inspect `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`.
 
@@ -37,12 +44,22 @@ python scripts/fqis_tonight_shadow_digest.py
 Get-Content data\pipeline\api_sports\orchestrator\latest_tonight_shadow_digest.md
 ```
 
+## Freshness Audit
+
+```powershell
+python scripts/fqis_live_freshness_report.py
+Get-Content data\pipeline\api_sports\orchestrator\latest_live_freshness_report.md
+```
+
+`STALE_REVIEW` is a research-quality warning, not permission to place real bets. Constant PnL is not automatically fatal; inspect freshness flags before interpreting performance.
+
 ## Inspect
 
 - `data/pipeline/api_sports/orchestrator/latest_full_cycle_report.md`
 - `data/pipeline/api_sports/orchestrator/latest_go_no_go_report.json`
 - `data/pipeline/api_sports/orchestrator/latest_shadow_readiness_report.json`
 - `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`
+- `data/pipeline/api_sports/orchestrator/latest_live_freshness_report.md`
 - `data/pipeline/api_sports/decision_bridge_live/latest_live_decisions.json`
 
 ## Red Lines

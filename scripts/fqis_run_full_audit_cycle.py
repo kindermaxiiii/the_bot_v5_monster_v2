@@ -42,6 +42,7 @@ REPORT_PATHS = {
     "post_quarantine_pnl_simulation": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_post_quarantine_pnl_simulation.json",
     "go_no_go": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json",
     "shadow_readiness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_readiness_report.json",
+    "live_freshness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_freshness_report.json",
 }
 
 
@@ -219,6 +220,8 @@ def write_master_report(payload: dict[str, Any]) -> None:
     shadow = reports.get("shadow_readiness", {})
     shadow_base = shadow.get("baseline") or {}
     shadow_post = shadow.get("post_quarantine") or {}
+    freshness = reports.get("live_freshness", {})
+    freshness_flags = freshness.get("freshness_flags") or []
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -273,6 +276,15 @@ def write_master_report(payload: dict[str, Any]) -> None:
             lines.append(f"- {reason}")
 
     lines += [
+        "",
+        "## Live Freshness",
+        "",
+        f"- Status: **{freshness.get('status', 'UNKNOWN')}**",
+        f"- Decisions total: **{freshness.get('decisions_total', 0)}**",
+        f"- Candidates this cycle: **{freshness.get('candidates_this_cycle', 0)}**",
+        f"- New snapshots appended: **{freshness.get('new_snapshots_appended', 0)}**",
+        f"- Ledger rows total: **{freshness.get('ledger_rows_total', 0)}**",
+        f"- Freshness flags: **{', '.join(str(flag) for flag in freshness_flags) if freshness_flags else 'NONE'}**",
         "",
         "## Final Verdict",
         "",
@@ -461,7 +473,7 @@ def inject_research_screening_diagnostics_into_latest_full_cycle_report() -> Non
         except Exception:
             return default
 
-    def pct(x) -> str:
+    def pct_text(x) -> str:
         return f"{fnum(x) * 100:.2f}%"
 
     section = "\n".join([
@@ -469,13 +481,13 @@ def inject_research_screening_diagnostics_into_latest_full_cycle_report() -> Non
         "",
         f"- Decisions screened: **{val('decisions_screened')}**",
         f"- Candidates accepted: **{val('candidates_this_cycle')}**",
-        f"- Research acceptance rate: **{pct(val('research_acceptance_rate'))}**",
+        f"- Research acceptance rate: **{pct_text(val('research_acceptance_rate'))}**",
         f"- Strict events+stats candidates: **{val('strict_events_plus_stats')}**",
         f"- Events-only research candidates: **{val('events_only_research')}**",
         f"- New snapshots appended: **{val('new_snapshots_appended')}**",
-        f"- Rejected by timing policy: **{val('timing_policy_rejected')}** = **{pct(val('timing_rejection_rate'))}**",
-        f"- Rejected by data tier: **{val('data_tier_rejected')}** = **{pct(val('data_tier_rejection_rate'))}**",
-        f"- Rejected by non-positive edge/EV: **{val('non_positive_edge_or_ev_rejected')}** = **{pct(val('non_positive_edge_or_ev_rejection_rate'))}**",
+        f"- Rejected by timing policy: **{val('timing_policy_rejected')}** = **{pct_text(val('timing_rejection_rate'))}**",
+        f"- Rejected by data tier: **{val('data_tier_rejected')}** = **{pct_text(val('data_tier_rejection_rate'))}**",
+        f"- Rejected by non-positive edge/EV: **{val('non_positive_edge_or_ev_rejected')}** = **{pct_text(val('non_positive_edge_or_ev_rejection_rate'))}**",
         f"- Rejected by final status: **{val('final_status_rejected')}**",
         f"- Rejected by negative-value veto: **{val('negative_value_veto_rejected')}**",
         "",
@@ -653,12 +665,13 @@ def main() -> int:
         ("15_post_quarantine_pnl_simulation", "fqis_post_quarantine_pnl_simulation.py"),
         ("16_go_no_go_report", "fqis_go_no_go_report.py"),
         ("17_shadow_readiness_report", "fqis_shadow_readiness_report.py"),
+        ("18_live_freshness_report", "fqis_live_freshness_report.py"),
     ]
 
-    for label, script in scripts[:-1]:
+    for label, script in scripts[:-2]:
         steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
 
-    reports = read_reports(exclude={"shadow_readiness"})
+    reports = read_reports(exclude={"shadow_readiness", "live_freshness"})
     ledger_restore = restore_file(ledger_snapshot)
     status = cycle_status(steps, ledger_restore)
     generated_at_utc = utc_now()
@@ -673,8 +686,24 @@ def main() -> int:
     )
     write_latest_payload(payload)
 
-    shadow_label, shadow_script = scripts[-1]
+    shadow_label, shadow_script = scripts[-2]
     steps.append(run_step(shadow_label, [CHILD_PYTHON, str(ROOT / "scripts" / shadow_script)], run_dir))
+
+    reports = read_reports(exclude={"live_freshness"})
+    ledger_restore = restore_file(ledger_snapshot)
+    status = cycle_status(steps, ledger_restore)
+    payload = build_payload(
+        status=status,
+        generated_at_utc=generated_at_utc,
+        run_dir=run_dir,
+        steps=steps,
+        reports=reports,
+        ledger_restore=ledger_restore,
+    )
+    write_latest_payload(payload)
+
+    freshness_label, freshness_script = scripts[-1]
+    steps.append(run_step(freshness_label, [CHILD_PYTHON, str(ROOT / "scripts" / freshness_script)], run_dir))
 
     reports = read_reports()
     ledger_restore = restore_file(ledger_snapshot)
@@ -693,6 +722,7 @@ def main() -> int:
     verdict = ((reports.get("daily_audit") or {}).get("verdict") or {})
     go_no_go = reports.get("go_no_go") or {}
     shadow = reports.get("shadow_readiness") or {}
+    freshness = reports.get("live_freshness") or {}
 
     print(json.dumps({
         "status": status,
@@ -700,6 +730,7 @@ def main() -> int:
         "go_no_go_state": go_no_go.get("go_no_go_state"),
         "promotion_allowed": verdict.get("promotion_allowed"),
         "shadow_state": shadow.get("shadow_state"),
+        "live_freshness_status": freshness.get("status"),
         "run_dir": str(run_dir),
         "latest_md": str(LATEST_MD),
         "latest_json": str(LATEST_JSON),

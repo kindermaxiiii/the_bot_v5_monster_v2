@@ -11,6 +11,7 @@ ORCH_DIR = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator"
 MONITOR_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
 FULL_CYCLE_JSON = ORCH_DIR / "latest_full_cycle_report.json"
 SHADOW_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
+LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_digest.json"
 OUT_MD = ORCH_DIR / "latest_tonight_shadow_digest.md"
 FULL_CYCLE_MD = ORCH_DIR / "latest_full_cycle_report.md"
@@ -67,9 +68,15 @@ def monitor_all_ledger_preserved(summary: dict[str, Any], rows: list[dict[str, A
     return bool(rows) and all(row.get("ledger_preserved") is True for row in rows)
 
 
-def build_recommendations(verdict: str, stopped_reason: str) -> list[str]:
+def build_recommendations(verdict: str, stopped_reason: str, freshness_flags: list[Any]) -> list[str]:
     if verdict == "SHADOW_SESSION_CLEAN":
         return ["Continue paper-only shadow monitoring. Do not enable real staking."]
+    if verdict == "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW":
+        flags = ", ".join(str(flag) for flag in freshness_flags) if freshness_flags else "STALE_REVIEW"
+        return [
+            "Continue paper-only shadow monitoring. Do not enable real staking.",
+            f"Review live freshness flags before interpreting research performance: {flags}.",
+        ]
     reason = stopped_reason or "NONE"
     return [
         f"Stopped reason: {reason}. Inspect {FULL_CYCLE_MD.relative_to(ROOT)}.",
@@ -80,6 +87,7 @@ def build_digest() -> dict[str, Any]:
     monitor = read_json(MONITOR_JSON)
     full_cycle = read_json(FULL_CYCLE_JSON)
     shadow_report = read_json(SHADOW_JSON)
+    live_freshness_report = read_json(LIVE_FRESHNESS_JSON)
 
     rows = monitor.get("rows") or []
     if not isinstance(rows, list):
@@ -93,6 +101,7 @@ def build_digest() -> dict[str, Any]:
     reports = full_cycle.get("reports") or {}
     go_no_go_report = reports.get("go_no_go") or {}
     shadow_from_full_cycle = reports.get("shadow_readiness") or {}
+    live_freshness_from_full_cycle = reports.get("live_freshness") or {}
     daily_audit = reports.get("daily_audit") or {}
     daily_verdict = daily_audit.get("verdict") or {}
     invariants = full_cycle.get("invariants") or {}
@@ -140,8 +149,31 @@ def build_digest() -> dict[str, Any]:
         or any_promotion_allowed
     )
 
+    final_live_freshness_status = (
+        live_freshness_report.get("status")
+        or live_freshness_from_full_cycle.get("status")
+        or final_row.get("live_freshness_status")
+    )
+    freshness_flags_final = (
+        live_freshness_report.get("freshness_flags")
+        or live_freshness_from_full_cycle.get("freshness_flags")
+        or final_row.get("freshness_flags")
+        or []
+    )
+    review_freshness_flags = [flag for flag in freshness_flags_final if flag != "OK_FRESH_LIVE_CYCLE"]
+    total_new_snapshots_appended = summary.get("total_new_snapshots_appended")
+    if total_new_snapshots_appended is None:
+        total_new_snapshots_appended = sum(int(row.get("new_snapshots_appended") or 0) for row in rows)
+
     if monitor_status == "STOPPED":
         verdict = "SHADOW_SESSION_STOPPED"
+    elif (
+        monitor_status in {"READY", "MANUALLY_INTERRUPTED"}
+        and not unsafe_flags
+        and cycles_completed > 0
+        and (final_live_freshness_status == "STALE_REVIEW" or bool(review_freshness_flags))
+    ):
+        verdict = "SHADOW_SESSION_CLEAN_WITH_STALE_REVIEW"
     elif monitor_status in {"READY", "MANUALLY_INTERRUPTED"} and not unsafe_flags and cycles_completed > 0:
         verdict = "SHADOW_SESSION_CLEAN"
     else:
@@ -170,8 +202,11 @@ def build_digest() -> dict[str, Any]:
         "max_post_quarantine_pnl": summary_value(summary, rows, "max_post_quarantine_pnl"),
         "min_post_quarantine_roi": summary_value(summary, rows, "min_post_quarantine_roi"),
         "max_post_quarantine_roi": summary_value(summary, rows, "max_post_quarantine_roi"),
+        "final_live_freshness_status": final_live_freshness_status,
+        "total_new_snapshots_appended": total_new_snapshots_appended,
+        "freshness_flags_final": freshness_flags_final,
         "verdict": verdict,
-        "recommendations": build_recommendations(verdict, stopped_reason),
+        "recommendations": build_recommendations(verdict, stopped_reason, freshness_flags_final),
     }
     return payload
 
@@ -195,6 +230,9 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "max_post_quarantine_pnl",
         "min_post_quarantine_roi",
         "max_post_quarantine_roi",
+        "final_live_freshness_status",
+        "total_new_snapshots_appended",
+        "freshness_flags_final",
         "verdict",
     ]
 
