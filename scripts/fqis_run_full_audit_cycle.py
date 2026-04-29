@@ -40,6 +40,7 @@ REPORT_PATHS = {
     "bucket_policy_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json",
     "bucket_quarantine_dry_run": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json",
     "post_quarantine_pnl_simulation": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_post_quarantine_pnl_simulation.json",
+    "go_no_go": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json",
 }
 
 
@@ -168,6 +169,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     pq_post = post_quarantine.get("post_quarantine") or {}
     pq_removed = post_quarantine.get("removed_by_quarantine") or {}
     pq_delta = post_quarantine.get("delta") or {}
+    go_no_go = reports.get("go_no_go", {})
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -178,6 +180,26 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Overall status: **{payload['status']}**",
         f"- Run dir: `{payload['run_dir']}`",
         f"- Research candidates ledger preserved: **{payload.get('invariants', {}).get('research_candidates_ledger_preserved', False)}**",
+        "",
+        "## Go / No-Go Verdict",
+        "",
+        f"- State: **{go_no_go.get('go_no_go_state', 'UNKNOWN')}**",
+        f"- Promotion allowed: **{go_no_go.get('promotion_allowed', False)}**",
+        f"- Live staking allowed: **{go_no_go.get('live_staking_allowed', False)}**",
+        f"- Simulation only: **{go_no_go.get('simulation_only', True)}**",
+        "",
+        "### Reasons",
+        "",
+    ]
+
+    go_no_go_reasons = go_no_go.get("reasons") or []
+    if not go_no_go_reasons:
+        lines.append("- No go/no-go reasons found.")
+    else:
+        for reason in go_no_go_reasons:
+            lines.append(f"- {reason}")
+
+    lines += [
         "",
         "## Final Verdict",
         "",
@@ -556,6 +578,7 @@ def main() -> int:
         ("13_bucket_policy_audit", "fqis_bucket_policy_audit.py"),
         ("14_bucket_quarantine_dry_run", "fqis_bucket_quarantine_dry_run.py"),
         ("15_post_quarantine_pnl_simulation", "fqis_post_quarantine_pnl_simulation.py"),
+        ("16_go_no_go_report", "fqis_go_no_go_report.py"),
     ]
 
     for label, script in scripts:
