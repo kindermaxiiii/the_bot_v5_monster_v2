@@ -1,0 +1,17 @@
+﻿{
+  "version": "fqis_bucket_policy_v1",
+  "mode": "DRY_RUN_ONLY",
+  "dry_run": true,
+  "enforce_quarantine": false,
+  "ledger_mutation_allowed": false,
+  "live_staking_allowed": false,
+  "min_settled": 20,
+  "kill_roi": -0.2,
+  "watch_roi": 0.0,
+  "actions": {
+    "KILL_OR_QUARANTINE_BUCKET": "simulate_exclusion_only",
+    "WATCHLIST_BUCKET": "keep_research_watch",
+    "KEEP_RESEARCH_BUCKET": "keep_research",
+    "INSUFFICIENT_SAMPLE_KEEP_RESEARCH": "keep_research_until_sample_threshold"
+  }
+}
