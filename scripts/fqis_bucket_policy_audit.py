@@ -12,7 +12,7 @@ CONFIG = ROOT / "config" / "fqis_bucket_policy.json"
 
 def main() -> int:
     payload = json.loads(INPUT.read_text(encoding="utf-8"))
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    config = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
     buckets = payload.get("buckets") or {}
 
     min_settled = int(config.get("min_settled", 20))
@@ -64,3 +64,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
