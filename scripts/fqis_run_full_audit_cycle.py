@@ -456,6 +456,7 @@ def main() -> int:
         ("08_provider_coverage", "fqis_provider_coverage_report.py"),
         ("09_daily_audit", "fqis_daily_audit_report.py"),
         ("10_final_pipeline_audit", "fqis_final_pipeline_audit.py"),
+        ("11_level3_invariant_report", "fqis_level3_invariant_report.py"),
     ]
 
     for label, script in scripts:
