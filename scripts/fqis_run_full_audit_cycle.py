@@ -28,6 +28,7 @@ REPORT_PATHS = {
     "bucket_alpha_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_alpha_audit.json",
     "bucket_policy_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json",
     "bucket_quarantine_dry_run": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_quarantine_dry_run.json",
+    "post_quarantine_pnl_simulation": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_post_quarantine_pnl_simulation.json",
 }
 
 
@@ -111,6 +112,12 @@ def write_master_report(payload: dict[str, Any]) -> None:
 
     bucket_quarantine = reports.get("bucket_quarantine_dry_run", {})
 
+    post_quarantine = reports.get("post_quarantine_pnl_simulation", {})
+    pq_base = post_quarantine.get("baseline") or {}
+    pq_post = post_quarantine.get("post_quarantine") or {}
+    pq_removed = post_quarantine.get("removed_by_quarantine") or {}
+    pq_delta = post_quarantine.get("delta") or {}
+
     lines = [
         "# FQIS Full Cycle Report",
         "",
@@ -179,6 +186,15 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Would keep: **{bucket_quarantine.get('would_keep', 0)}**",
         f"- Would quarantine: **{bucket_quarantine.get('would_quarantine', 0)}**",
         f"- Would quarantine rate: **{pct(bucket_quarantine.get('would_quarantine_rate', 0))}**",
+        "",
+        "## Post-Quarantine PnL Simulation",
+        "",
+        f"- Mode: **{post_quarantine.get('mode', 'UNKNOWN')}**",
+        f"- Baseline PnL / ROI: **{pq_base.get('pnl', 0)}u / {pq_base.get('roi', 0)}**",
+        f"- Post-quarantine PnL / ROI: **{pq_post.get('pnl', 0)}u / {pq_post.get('roi', 0)}**",
+        f"- Removed PnL / ROI: **{pq_removed.get('pnl', 0)}u / {pq_removed.get('roi', 0)}**",
+        f"- PnL improvement: **{pq_delta.get('pnl_improvement', 0)}u**",
+        f"- ROI improvement: **{pq_delta.get('roi_improvement', 0)}**",
         "",
         "## Research Pipeline",
         "",
@@ -485,6 +501,7 @@ def main() -> int:
         ("12_bucket_alpha_audit", "fqis_bucket_alpha_audit.py"),
         ("13_bucket_policy_audit", "fqis_bucket_policy_audit.py"),
         ("14_bucket_quarantine_dry_run", "fqis_bucket_quarantine_dry_run.py"),
+        ("15_post_quarantine_pnl_simulation", "fqis_post_quarantine_pnl_simulation.py"),
     ]
 
     for label, script in scripts:
