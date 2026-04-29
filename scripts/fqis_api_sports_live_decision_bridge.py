@@ -26,6 +26,8 @@ except Exception:
 from app.core.calibration import CalibrationLayer
 from app.core.contracts import MarketProjection
 from app.services.execution_layer import ExecutionLayer
+from app.fqis.level3_state_classifier import classify_level3_state
+from app.fqis.level3_pipeline_router import route_level3_pipeline
 
 
 MODE = "FQIS_LEVEL2_DECISION_BRIDGE"
@@ -390,7 +392,19 @@ def classify_group(group: dict[str, Any], level3_states: dict[str, dict[str, Any
 
     state_ready = bool(state.get("state_ready", False))
     trade_ready = bool(state.get("trade_ready", False))
+    events_available = bool(state.get("events_available", False))
+    stats_available = bool(state.get("stats_available", False))
     data_mode = str(state.get("data_mode") or "UNKNOWN")
+
+    level3_classification = classify_level3_state(
+        events_available=events_available,
+        stats_available=stats_available,
+        promotion_allowed=False,
+    )
+    level3_route = route_level3_pipeline(
+        state=level3_classification.state.value,
+        promotion_allowed=False,
+    )
 
     state_warnings = list(state.get("state_warnings") or [])
     state_vetoes = list(state.get("vetoes") or [])
@@ -486,6 +500,17 @@ def classify_group(group: dict[str, Any], level3_states: dict[str, dict[str, Any
                 "level3_data_mode": data_mode,
                 "level3_state_ready": state_ready,
                 "level3_trade_ready": trade_ready,
+                "level3_events_available": events_available,
+                "level3_stats_available": stats_available,
+                "level3_gate_state": level3_classification.state.value,
+                "level3_pipeline": level3_route.pipeline,
+                "level3_production_allowed": level3_route.production_allowed,
+                "level3_research_allowed": level3_route.research_allowed,
+                "level3_live_staking_allowed": False,
+                "level3_route_reason": level3_route.reason,
+                "final_pipeline": level3_route.pipeline,
+                "final_pipeline_reason": level3_route.reason,
+                "live_staking_allowed": False,
                 "level3_state_warnings": state_warnings,
                 "level3_state_vetoes": state_vetoes,
                 "remaining_goal_expectancy": round(lam_remaining, 6),
@@ -508,6 +533,12 @@ def classify_group(group: dict[str, Any], level3_states: dict[str, dict[str, Any
         # Level 3 cannot be bypassed.
         # State-ready means the bot can understand the match.
         # Trade-ready means the bot has enough live data to validate stronger decisions.
+        if level3_route.reject:
+            classified.vetoes.append("level3_pipeline_reject")
+
+        if level3_route.pipeline == "research":
+            classified.vetoes.append("level3_research_only")
+
         if not state_ready:
             classified.vetoes.append("level3_state_not_ready")
 
@@ -1123,3 +1154,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
