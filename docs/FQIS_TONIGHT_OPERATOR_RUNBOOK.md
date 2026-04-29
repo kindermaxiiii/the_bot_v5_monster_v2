@@ -15,11 +15,23 @@ python scripts/fqis_go_no_go_report.py
 python scripts/fqis_shadow_readiness_report.py
 ```
 
+## 10-Minute Monitoring Loop
+
+```powershell
+python scripts/fqis_tonight_shadow_monitor.py --cycles 5 --sleep-seconds 120
+python scripts/fqis_tonight_shadow_monitor.py --cycles 5 --sleep-seconds 120 --discord
+```
+
+- Use `--discord` only for paper-only alerts.
+- Stop if monitor status is `STOPPED`.
+- Inspect `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`.
+
 ## Inspect
 
 - `data/pipeline/api_sports/orchestrator/latest_full_cycle_report.md`
 - `data/pipeline/api_sports/orchestrator/latest_go_no_go_report.json`
 - `data/pipeline/api_sports/orchestrator/latest_shadow_readiness_report.json`
+- `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`
 - `data/pipeline/api_sports/decision_bridge_live/latest_live_decisions.json`
 
 ## Red Lines
