@@ -24,6 +24,7 @@ REPORT_PATHS = {
     "research_performance": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_research_performance_report.json",
     "provider_coverage": ROOT / "data" / "pipeline" / "api_sports" / "provider_coverage" / "latest_provider_coverage_report.json",
     "daily_audit": ROOT / "data" / "pipeline" / "api_sports" / "audit" / "latest_daily_audit_report.json",
+    "final_pipeline_audit": ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_final_pipeline_audit.json",
 }
 
 
@@ -98,6 +99,10 @@ def write_master_report(payload: dict[str, Any]) -> None:
     candidates = reports.get("research_candidates", {})
     candidates_summary = candidates.get("summary") or {}
 
+    final_pipeline = reports.get("final_pipeline_audit", {})
+    final_pipeline_counts = final_pipeline.get("final_pipeline_counts") or {}
+    gate_state_counts = final_pipeline.get("level3_gate_state_counts") or {}
+
     lines = [
         "# FQIS Full Cycle Report",
         "",
@@ -138,6 +143,17 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Level 3 trade ready: **{live_summary.get('level3_trade_ready', 0)}**",
         f"- Level 3 stats available: **{live_summary.get('level3_stats_available', 0)}**",
         f"- Level 3 events available: **{live_summary.get('level3_events_available', 0)}**",
+        "",
+        "## Level 3 Final Pipeline Audit",
+        "",
+        f"- Production routed: **{final_pipeline_counts.get('production', 0)}**",
+        f"- Research routed: **{final_pipeline_counts.get('research', 0)}**",
+        f"- Rejected routed: **{final_pipeline_counts.get('reject', 0)}**",
+        f"- REAL_TRADE_READY decisions: **{gate_state_counts.get('REAL_TRADE_READY', 0)}**",
+        f"- EVENTS_ONLY_RESEARCH_READY decisions: **{gate_state_counts.get('EVENTS_ONLY_RESEARCH_READY', 0)}**",
+        f"- SCORE_ONLY decisions: **{gate_state_counts.get('SCORE_ONLY', 0)}**",
+        f"- Live staking true count: **{final_pipeline.get('live_staking_allowed_true_count', 0)}**",
+        f"- Live staking invariant disabled: **{final_pipeline.get('invariant_live_staking_disabled', False)}**",
         "",
         "## Research Pipeline",
         "",
@@ -439,6 +455,7 @@ def main() -> int:
         ("07_operator_report", "fqis_operator_decision_report.py"),
         ("08_provider_coverage", "fqis_provider_coverage_report.py"),
         ("09_daily_audit", "fqis_daily_audit_report.py"),
+        ("10_final_pipeline_audit", "fqis_final_pipeline_audit.py"),
     ]
 
     for label, script in scripts:
