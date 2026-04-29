@@ -1,21 +1,29 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.fqis.level3_audit import append_level3_audit_row
+from app.fqis.level3_state_classifier import classify_level3_state
+
 LEVEL3_PATH = ROOT / "data" / "pipeline" / "api_sports" / "level3_live_state" / "latest_level3_live_state.json"
 DECISIONS_PATH = ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_live_decisions.json"
 PROVIDER_PATH = ROOT / "data" / "pipeline" / "api_sports" / "provider_coverage" / "latest_provider_coverage_report.json"
 
 OUT_MD = ROOT / "data" / "pipeline" / "api_sports" / "level3_live_state" / "latest_trade_ready_diagnosis.md"
 OUT_JSON = ROOT / "data" / "pipeline" / "api_sports" / "level3_live_state" / "latest_trade_ready_diagnosis.json"
+OUT_AUDIT_CSV = ROOT / "data" / "pipeline" / "api_sports" / "level3_live_state" / "latest_level3_gate_audit.csv"
 
 MODES = ("SCORE_ONLY", "EVENTS_ONLY", "EVENTS_PLUS_STATS")
+LEVEL3_STATES = ("REAL_TRADE_READY", "EVENTS_ONLY_RESEARCH_READY", "SCORE_ONLY")
 CACHE_STALE_SECONDS = 900.0
 
 
@@ -35,6 +43,8 @@ def main() -> int:
     inspected = [_diagnose_fixture(row, provider_by_fixture, bridge_by_fixture) for row in fixtures]
     _annotate_cache_staleness(inspected)
     mode_counts = {mode: sum(1 for item in inspected if item["data_mode"] == mode) for mode in MODES}
+    level3_state_counts = {state: sum(1 for item in inspected if item["level3_state"] == state) for state in LEVEL3_STATES}
+    _write_level3_audit(inspected)
     recommendations = _build_recommendations(inspected, top_blockers)
 
     payload = {
@@ -52,6 +62,11 @@ def main() -> int:
             "events_available_count": sum(1 for item in inspected if item["events_available"]),
             "stats_available_count": sum(1 for item in inspected if item["stats_available"]),
             "modes": mode_counts,
+            "level3_states": level3_state_counts,
+            "real_trade_ready_count": level3_state_counts["REAL_TRADE_READY"],
+            "events_only_research_ready_count": level3_state_counts["EVENTS_ONLY_RESEARCH_READY"],
+            "score_only_rejected_count": level3_state_counts["SCORE_ONLY"],
+            "live_staking_allowed_count": sum(1 for item in inspected if item["live_staking_allowed"]),
             "provider_summary": provider.get("summary", {}),
             "decision_count": len(decision_rows),
         },
@@ -63,9 +78,17 @@ def main() -> int:
             item for item in inspected
             if item["data_mode"] == "EVENTS_PLUS_STATS" and not item["trade_ready"]
         ],
-        "events_only_not_trade_ready": [
+        "events_only_research_ready": [
             item for item in inspected
-            if item["data_mode"] == "EVENTS_ONLY" and not item["trade_ready"]
+            if item["level3_state"] == "EVENTS_ONLY_RESEARCH_READY"
+        ],
+        "real_trade_ready": [
+            item for item in inspected
+            if item["level3_state"] == "REAL_TRADE_READY"
+        ],
+        "score_only_rejected": [
+            item for item in inspected
+            if item["level3_state"] == "SCORE_ONLY"
         ],
         "fixtures": inspected,
         "recommendations": recommendations,
@@ -83,6 +106,10 @@ def main() -> int:
             "trade_ready_count": payload["summary"]["trade_ready_count"],
             "events_available_count": payload["summary"]["events_available_count"],
             "stats_available_count": payload["summary"]["stats_available_count"],
+            "real_trade_ready_count": payload["summary"]["real_trade_ready_count"],
+            "events_only_research_ready_count": payload["summary"]["events_only_research_ready_count"],
+            "score_only_rejected_count": payload["summary"]["score_only_rejected_count"],
+            "live_staking_allowed_count": payload["summary"]["live_staking_allowed_count"],
             "output_md": str(OUT_MD),
             "output_json": str(OUT_JSON),
         }
@@ -107,6 +134,12 @@ def _diagnose_fixture(
     fixture_vetoes = [_text(veto) for veto in row.get("vetoes", []) or [] if _text(veto)]
     warnings = [_text(warning) for warning in row.get("state_warnings", []) or [] if _text(warning)]
 
+    classification = classify_level3_state(
+        events_available=events_available,
+        stats_available=stats_available,
+        promotion_allowed=False,
+    )
+
     reasons = _diagnosis_reasons(
         row=row,
         data_mode=data_mode,
@@ -118,6 +151,11 @@ def _diagnose_fixture(
     )
 
     return {
+        "level3_state": classification.state.value,
+        "production_eligible": classification.production_eligible,
+        "research_eligible": classification.research_eligible,
+        "live_staking_allowed": classification.live_staking_allowed,
+        "level3_gate_reason": classification.reason,
         "fixture_id": fixture_id,
         "match": _text(row.get("match")),
         "score": _text(row.get("score")),
@@ -221,32 +259,32 @@ def _build_recommendations(inspected: list[dict[str, Any]], top_blockers: Counte
     recommendations.append(_recommendation(
         "provider problem",
         provider_problem_fixtures,
-        "Prioriser les compétitions/fixtures où le provider renvoie SCORE_ONLY ou STATS_ONLY_ANOMALY; ce n'est pas un problème de modèle.",
+        "Prioriser les compÃ©titions/fixtures oÃ¹ le provider renvoie SCORE_ONLY ou STATS_ONLY_ANOMALY; ce n'est pas un problÃ¨me de modÃ¨le.",
     ))
     recommendations.append(_recommendation(
         "cache stale",
         cache_stale_fixtures,
-        "Rafraîchir le cache Level 3/provider si latest_seen est en retard par rapport aux autres fixtures inspectées.",
+        "RafraÃ®chir le cache Level 3/provider si latest_seen est en retard par rapport aux autres fixtures inspectÃ©es.",
     ))
     recommendations.append(_recommendation(
         "parser problem",
         parser_problem_fixtures,
-        "Auditer le mapping provider -> level3 quand provider_coverage voit events/stats mais latest_level3_live_state ne les reflète pas.",
+        "Auditer le mapping provider -> level3 quand provider_coverage voit events/stats mais latest_level3_live_state ne les reflÃ¨te pas.",
     ))
     recommendations.append(_recommendation(
         "bridge too strict",
         bridge_too_strict_fixtures,
-        "Revoir la règle qui impose stats pour trade_ready, surtout sur EVENTS_ONLY state_ready avec veto level3_not_trade_ready_without_statistics.",
+        "Revoir la rÃ¨gle qui impose stats pour trade_ready, surtout sur EVENTS_ONLY state_ready avec veto level3_not_trade_ready_without_statistics.",
     ))
     recommendations.append(_recommendation(
         "missing events",
         missing_events_fixtures,
-        "Bloquer ou dégrader explicitement SCORE_ONLY; sans events, Level 3 ne peut pas valider le rythme live.",
+        "Bloquer ou dÃ©grader explicitement SCORE_ONLY; sans events, Level 3 ne peut pas valider le rythme live.",
     ))
     recommendations.append(_recommendation(
         "missing stats",
         missing_stats_fixtures,
-        "Décider si EVENTS_ONLY peut créer une watchlist Level 3, ou maintenir le veto stats pour les signaux réels.",
+        "DÃ©cider si EVENTS_ONLY peut crÃ©er une watchlist Level 3, ou maintenir le veto stats pour les signaux rÃ©els.",
     ))
 
     recommendations.append({
@@ -272,6 +310,25 @@ def _recommendation(category: str, fixtures: list[dict[str, Any]], action: str) 
     }
 
 
+
+def _write_level3_audit(inspected: list[dict[str, Any]]) -> None:
+    if OUT_AUDIT_CSV.exists():
+        OUT_AUDIT_CSV.unlink()
+
+    for item in inspected:
+        vetoes = [entry["veto"] for entry in item.get("bridge_vetoes", []) if entry.get("veto")]
+        append_level3_audit_row(
+            path=OUT_AUDIT_CSV,
+            fixture_id=str(item["fixture_id"]),
+            state=str(item["level3_state"]),
+            events_available=bool(item["events_available"]),
+            stats_available=bool(item["stats_available"]),
+            production_eligible=bool(item["production_eligible"]),
+            research_eligible=bool(item["research_eligible"]),
+            live_staking_allowed=bool(item["live_staking_allowed"]),
+            vetoes=vetoes,
+            reason=str(item["level3_gate_reason"]),
+        )
 def _render_markdown(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     lines = [
@@ -322,7 +379,7 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         "| Fixture | Match | Min | Score | Reasons | Vetoes |",
         "|---:|---|---:|---:|---|---|",
     ])
-    lines.extend(_fixture_lines(payload["events_only_not_trade_ready"]))
+    lines.extend(_fixture_lines(payload["events_only_research_ready"]))
 
     lines.extend([
         "",
@@ -347,19 +404,23 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Fixtures Inspected",
         "",
-        "| Fixture | Match | Mode | State | Trade | Events | Stats | Provider | Reasons |",
-        "|---:|---|---|---:|---:|---:|---:|---|---|",
+        "| Fixture | Match | Level3 State | Mode | State | Trade | Events | Stats | Production | Research | Live Stake | Provider | Reasons |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|",
     ])
     for item in payload["fixtures"]:
         lines.append(
-            "| {fixture_id} | {match} | {mode} | {state} | {trade} | {events} | {stats} | {provider} | {reasons} |".format(
+            "| {fixture_id} | {match} | {level3_state} | {mode} | {state} | {trade} | {events} | {stats} | {production} | {research} | {live_stake} | {provider} | {reasons} |".format(
                 fixture_id=_md(item["fixture_id"]),
                 match=_md(item["match"]),
+                level3_state=_md(item["level3_state"]),
                 mode=_md(item["data_mode"]),
                 state=_yes_no(item["state_ready"]),
                 trade=_yes_no(item["trade_ready"]),
                 events=_yes_no(item["events_available"]),
                 stats=_yes_no(item["stats_available"]),
+                production=_yes_no(item["production_eligible"]),
+                research=_yes_no(item["research_eligible"]),
+                live_stake=_yes_no(item["live_staking_allowed"]),
                 provider=_md(item["provider_coverage_label"]),
                 reasons=_md(", ".join(item["diagnosis_reasons"])),
             )
@@ -491,3 +552,11 @@ def _md(value: Any) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
+
+
+
