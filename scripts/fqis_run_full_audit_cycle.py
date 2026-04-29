@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,6 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 ORCH_DIR = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator"
 LATEST_MD = ORCH_DIR / "latest_full_cycle_report.md"
 LATEST_JSON = ORCH_DIR / "latest_full_cycle_report.json"
+RESEARCH_CANDIDATES_LEDGER = (
+    ROOT
+    / "data"
+    / "pipeline"
+    / "api_sports"
+    / "research_ledger"
+    / "research_candidates_ledger.csv"
+)
+VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+CHILD_PYTHON = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 
 REPORT_PATHS = {
     "live_decisions": ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_live_decisions.json",
@@ -43,6 +54,46 @@ def read_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"error": str(exc), "path": str(path)}
+
+
+def capture_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "path": str(path),
+            "exists": False,
+            "content": b"",
+            "sha256_before": "",
+        }
+
+    content = path.read_bytes()
+    return {
+        "path": str(path),
+        "exists": True,
+        "content": content,
+        "sha256_before": hashlib.sha256(content).hexdigest(),
+    }
+
+
+def restore_file(snapshot: dict[str, Any]) -> dict[str, Any]:
+    path = Path(str(snapshot["path"]))
+
+    if snapshot["exists"]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(snapshot["content"])
+        content_after = path.read_bytes()
+        sha256_after = hashlib.sha256(content_after).hexdigest()
+    else:
+        if path.exists():
+            path.unlink()
+        sha256_after = ""
+
+    return {
+        "path": str(path),
+        "exists_before": bool(snapshot["exists"]),
+        "sha256_before": str(snapshot["sha256_before"]),
+        "sha256_after": sha256_after,
+        "preserved": str(snapshot["sha256_before"]) == sha256_after,
+    }
 
 
 def run_step(label: str, cmd: list[str], run_dir: Path) -> dict[str, Any]:
@@ -126,6 +177,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Generated at UTC: `{payload['generated_at_utc']}`",
         f"- Overall status: **{payload['status']}**",
         f"- Run dir: `{payload['run_dir']}`",
+        f"- Research candidates ledger preserved: **{payload.get('invariants', {}).get('research_candidates_ledger_preserved', False)}**",
         "",
         "## Final Verdict",
         "",
@@ -195,6 +247,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Removed PnL / ROI: **{pq_removed.get('pnl', 0)}u / {pq_removed.get('roi', 0)}**",
         f"- PnL improvement: **{pq_delta.get('pnl_improvement', 0)}u**",
         f"- ROI improvement: **{pq_delta.get('roi_improvement', 0)}**",
+        "- Scope: **simulation-only / dry-run-only / no ledger mutation**",
         "",
         "## Research Pipeline",
         "",
@@ -458,12 +511,13 @@ def main() -> int:
     run_id = datetime.now(timezone.utc).strftime("run_%Y%m%d_%H%M%S")
     run_dir = ORCH_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    ledger_snapshot = capture_file(RESEARCH_CANDIDATES_LEDGER)
 
     steps: list[dict[str, Any]] = []
 
     if not args.skip_bridge:
         bridge_cmd = [
-            sys.executable,
+            CHILD_PYTHON,
             str(ROOT / "scripts" / "fqis_api_sports_live_decision_bridge.py"),
             "--output-dir",
             "data/pipeline/api_sports/decision_bridge_live",
@@ -505,11 +559,13 @@ def main() -> int:
     ]
 
     for label, script in scripts:
-        steps.append(run_step(label, [sys.executable, str(ROOT / "scripts" / script)], run_dir))
+        steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
 
     reports = {name: read_json(path) for name, path in REPORT_PATHS.items()}
 
-    status = "READY" if all(s["ok"] for s in steps) else "PARTIAL_FAILURE"
+    ledger_restore = restore_file(ledger_snapshot)
+
+    status = "READY" if all(s["ok"] for s in steps) and ledger_restore["preserved"] else "PARTIAL_FAILURE"
 
     payload = {
         "mode": "FQIS_FULL_CYCLE_ORCHESTRATOR",
@@ -518,6 +574,12 @@ def main() -> int:
         "run_dir": str(run_dir),
         "steps": steps,
         "reports": reports,
+        "invariants": {
+            "research_candidates_ledger_preserved": ledger_restore["preserved"],
+            "research_candidates_ledger": ledger_restore,
+            "live_staking_enabled": False,
+            "simulation_only": True,
+        },
         "latest_md": str(LATEST_MD),
         "latest_json": str(LATEST_JSON),
     }
@@ -551,7 +613,7 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     fixture_script = root / "scripts" / "fqis_fixture_level_research_report.py"
     if fixture_script.exists():
-        subprocess.run([sys.executable, str(fixture_script)], check=False)
+        subprocess.run([CHILD_PYTHON, str(fixture_script)], check=False)
 
     inject_research_screening_diagnostics_into_latest_full_cycle_report()
     inject_fixture_level_research_into_latest_full_cycle_report()
