@@ -50,15 +50,22 @@ LEDGER_FIELDS = (
 
 
 def main() -> None:
-    existing_rows, seen_keys, dropped_existing_rows = _read_existing_rows()
+    existing_rows, seen_keys, seen_fixture_ids, dropped_existing_rows = _read_existing_rows()
     promoted_rows = _parse_promoted_rows()
 
     new_rows: list[dict[str, str]] = []
+    skipped_existing_fixture = 0
     for row in promoted_rows:
         key = row["promoted_key"]
+        fixture_id = row.get("fixture_id", "")
         if key in seen_keys:
             continue
+        if fixture_id and fixture_id in seen_fixture_ids:
+            skipped_existing_fixture += 1
+            continue
         seen_keys.add(key)
+        if fixture_id:
+            seen_fixture_ids.add(fixture_id)
         new_rows.append(row)
 
     all_rows = existing_rows + new_rows
@@ -69,6 +76,7 @@ def main() -> None:
             "status": "READY",
             "parsed_promoted": len(promoted_rows),
             "new_promoted": len(new_rows),
+            "skipped_existing_fixture": skipped_existing_fixture,
             "total": len(all_rows),
             "dropped_existing_rows": dropped_existing_rows,
             "file": str(LEDGER),
@@ -133,12 +141,13 @@ def _ledger_row_from_markdown(row: dict[str, str]) -> dict[str, str]:
     return {field: normalized.get(field, "") for field in LEDGER_FIELDS}
 
 
-def _read_existing_rows() -> tuple[list[dict[str, str]], set[str], int]:
+def _read_existing_rows() -> tuple[list[dict[str, str]], set[str], set[str], int]:
     if not LEDGER.exists():
-        return [], set(), 0
+        return [], set(), set(), 0
 
     rows: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_keys: set[str] = set()
+    seen_fixture_ids: set[str] = set()
     dropped = 0
 
     with LEDGER.open("r", encoding="utf-8", newline="") as handle:
@@ -148,13 +157,19 @@ def _read_existing_rows() -> tuple[list[dict[str, str]], set[str], int]:
             if not key:
                 dropped += 1
                 continue
-            if key in seen:
+            if key in seen_keys:
                 dropped += 1
                 continue
-            seen.add(key)
+            seen_keys.add(key)
+            fixture_id = normalized.get("fixture_id", "")
+            if fixture_id and fixture_id in seen_fixture_ids:
+                dropped += 1
+                continue
+            if fixture_id:
+                seen_fixture_ids.add(fixture_id)
             rows.append(normalized)
 
-    return rows, seen, dropped
+    return rows, seen_keys, seen_fixture_ids, dropped
 
 
 def _normalize_existing_row(row: dict[str, Any]) -> dict[str, str]:
