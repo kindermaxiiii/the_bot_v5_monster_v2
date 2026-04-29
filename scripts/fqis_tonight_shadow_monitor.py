@@ -25,6 +25,18 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_timestamp(value: Any) -> datetime | None:
+    try:
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except Exception:
+        return None
+
+
 def read_json(path: Path) -> dict[str, Any]:
     try:
         if not path.exists():
@@ -103,7 +115,107 @@ def stop_reason(row: dict[str, Any]) -> str:
     return "; ".join(reasons)
 
 
+def numeric_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for row in rows:
+        value = fnum(row.get(key))
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def unique_values(rows: list[dict[str, Any]], key: str) -> list[str]:
+    return sorted(
+        {
+            str(row.get(key))
+            for row in rows
+            if row.get(key) is not None and row.get(key) != ""
+        }
+    )
+
+
+def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    first_timestamp = rows[0].get("timestamp") if rows else None
+    last_timestamp = rows[-1].get("timestamp") if rows else None
+    first_dt = parse_timestamp(first_timestamp)
+    last_dt = parse_timestamp(last_timestamp)
+    duration_minutes = None
+    if first_dt is not None and last_dt is not None:
+        duration_minutes = round(max(0.0, (last_dt - first_dt).total_seconds() / 60.0), 6)
+
+    pnl_values = numeric_values(rows, "post_quarantine_pnl")
+    roi_values = numeric_values(rows, "post_quarantine_roi")
+
+    return {
+        "first_timestamp": first_timestamp,
+        "last_timestamp": last_timestamp,
+        "duration_minutes": duration_minutes,
+        "ready_cycles": sum(1 for row in rows if row.get("full_cycle_status") == "READY"),
+        "stopped_cycles": sum(1 for row in rows if stop_reason(row)),
+        "shadow_ready_cycles": sum(1 for row in rows if row.get("shadow_state") == "SHADOW_READY"),
+        "unique_go_no_go_states": unique_values(rows, "go_no_go_state"),
+        "unique_shadow_states": unique_values(rows, "shadow_state"),
+        "min_post_quarantine_pnl": min(pnl_values) if pnl_values else None,
+        "max_post_quarantine_pnl": max(pnl_values) if pnl_values else None,
+        "min_post_quarantine_roi": min(roi_values) if roi_values else None,
+        "max_post_quarantine_roi": max(roi_values) if roi_values else None,
+        "all_ledger_preserved": bool(rows) and all(row.get("ledger_preserved") is True for row in rows),
+        "any_real_bets_enabled": any(row.get("can_execute_real_bets") is True for row in rows),
+        "any_live_staking_enabled": any(
+            row.get("live_staking_allowed") is True or row.get("can_enable_live_staking") is True
+            for row in rows
+        ),
+        "any_promotion_allowed": any(row.get("promotion_allowed") is True for row in rows),
+    }
+
+
+def build_payload(
+    *,
+    status: str,
+    cycles_requested: int,
+    rows: list[dict[str, Any]],
+    discord_enabled: bool,
+    stopped_reason: str,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "generated_at_utc": utc_now(),
+        "cycles_requested": cycles_requested,
+        "cycles_completed": len(rows),
+        "discord_enabled": discord_enabled,
+        "stopped_reason": stopped_reason,
+        "summary": build_summary(rows),
+        "rows": rows,
+    }
+
+
+def markdown_value(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value) if value else "[]"
+    return str(value)
+
+
 def write_markdown(payload: dict[str, Any]) -> None:
+    summary = payload.get("summary") or {}
+    summary_fields = [
+        "first_timestamp",
+        "last_timestamp",
+        "duration_minutes",
+        "ready_cycles",
+        "stopped_cycles",
+        "shadow_ready_cycles",
+        "unique_go_no_go_states",
+        "unique_shadow_states",
+        "min_post_quarantine_pnl",
+        "max_post_quarantine_pnl",
+        "min_post_quarantine_roi",
+        "max_post_quarantine_roi",
+        "all_ledger_preserved",
+        "any_real_bets_enabled",
+        "any_live_staking_enabled",
+        "any_promotion_allowed",
+    ]
+
     lines = [
         "# FQIS Tonight Shadow Monitor",
         "",
@@ -112,6 +224,12 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Cycles completed: **{payload['cycles_completed']}**",
         f"- Discord enabled: **{payload['discord_enabled']}**",
         f"- Stopped reason: **{payload['stopped_reason'] or 'NONE'}**",
+        "",
+        "## Summary",
+        "",
+        *[f"- {field}: **{markdown_value(summary.get(field))}**" for field in summary_fields],
+        "",
+        "## Cycles",
         "",
         "| Cycle | Timestamp | Full cycle | Go/No-Go | Shadow | Promotion | Live staking | Real bets | Enable staking | Ledger | PnL | ROI |",
         "|---:|---|---|---|---|---|---|---|---|---|---:|---:|",
@@ -147,42 +265,54 @@ def main() -> int:
     status = "READY"
     stopped_reason = ""
 
-    payload = {
-        "status": status,
-        "generated_at_utc": utc_now(),
-        "cycles_requested": cycles_requested,
-        "cycles_completed": 0,
-        "discord_enabled": bool(args.discord),
-        "stopped_reason": stopped_reason,
-        "rows": rows,
-    }
-    write_outputs(payload)
+    payload = build_payload(
+        status=status,
+        cycles_requested=cycles_requested,
+        rows=rows,
+        discord_enabled=bool(args.discord),
+        stopped_reason=stopped_reason,
+    )
 
-    for index in range(cycles_requested):
-        returncode = run_full_cycle(discord=bool(args.discord))
-        row = build_cycle_row(cycle_number=index + 1, returncode=returncode)
-        rows.append(row)
-
-        reason = stop_reason(row)
-        if reason:
-            status = "STOPPED"
-            stopped_reason = reason
-
-        payload = {
-            "status": status,
-            "generated_at_utc": utc_now(),
-            "cycles_requested": cycles_requested,
-            "cycles_completed": len(rows),
-            "discord_enabled": bool(args.discord),
-            "stopped_reason": stopped_reason,
-            "rows": rows,
-        }
+    try:
         write_outputs(payload)
 
-        if status == "STOPPED" and args.stop_on_blocked:
-            break
-        if index < cycles_requested - 1:
-            time.sleep(max(0.0, args.sleep_seconds))
+        for index in range(cycles_requested):
+            returncode = run_full_cycle(discord=bool(args.discord))
+            row = build_cycle_row(cycle_number=index + 1, returncode=returncode)
+            rows.append(row)
+
+            reason = stop_reason(row)
+            if reason:
+                status = "STOPPED"
+                stopped_reason = reason
+
+            payload = build_payload(
+                status=status,
+                cycles_requested=cycles_requested,
+                rows=rows,
+                discord_enabled=bool(args.discord),
+                stopped_reason=stopped_reason,
+            )
+            write_outputs(payload)
+
+            if status == "STOPPED" and args.stop_on_blocked:
+                break
+            if index < cycles_requested - 1:
+                time.sleep(max(0.0, args.sleep_seconds))
+    except KeyboardInterrupt:
+        if status != "STOPPED":
+            status = "MANUALLY_INTERRUPTED"
+            stopped_reason = "KEYBOARD_INTERRUPT"
+        payload = build_payload(
+            status=status,
+            cycles_requested=cycles_requested,
+            rows=rows,
+            discord_enabled=bool(args.discord),
+            stopped_reason=stopped_reason,
+        )
+        write_outputs(payload)
+        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        return 130 if status == "MANUALLY_INTERRUPTED" else 2
 
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0 if status == "READY" else 2

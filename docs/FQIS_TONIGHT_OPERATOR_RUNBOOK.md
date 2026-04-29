@@ -26,6 +26,17 @@ python scripts/fqis_tonight_shadow_monitor.py --cycles 5 --sleep-seconds 120 --d
 - Stop if monitor status is `STOPPED`.
 - Inspect `data/pipeline/api_sports/orchestrator/latest_tonight_shadow_monitor.md`.
 
+## How To Stop Safely
+
+Press `Ctrl+C` once. Expected monitor status: `MANUALLY_INTERRUPTED`. This is acceptable if `stopped_reason` is `KEYBOARD_INTERRUPT` and all unsafe flags are `false`.
+
+## End-Of-Session Digest
+
+```powershell
+python scripts/fqis_tonight_shadow_digest.py
+Get-Content data\pipeline\api_sports\orchestrator\latest_tonight_shadow_digest.md
+```
+
 ## Inspect
 
 - `data/pipeline/api_sports/orchestrator/latest_full_cycle_report.md`
