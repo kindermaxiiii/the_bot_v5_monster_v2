@@ -105,6 +105,9 @@ def write_master_report(payload: dict[str, Any]) -> None:
     final_pipeline_counts = final_pipeline.get("final_pipeline_counts") or {}
     gate_state_counts = final_pipeline.get("level3_gate_state_counts") or {}
 
+    bucket_policy = reports.get("bucket_policy_audit", {})
+    bucket_policies = bucket_policy.get("buckets") or {}
+
     lines = [
         "# FQIS Full Cycle Report",
         "",
@@ -156,6 +159,15 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- SCORE_ONLY decisions: **{gate_state_counts.get('SCORE_ONLY', 0)}**",
         f"- Live staking true count: **{final_pipeline.get('live_staking_allowed_true_count', 0)}**",
         f"- Live staking invariant disabled: **{final_pipeline.get('invariant_live_staking_disabled', False)}**",
+        "",
+        "## Bucket Alpha Policy",
+        "",
+        "| Bucket | Action | Settled | ROI | PnL | Win rate |",
+        "|---|---|---:|---:|---:|---:|",
+        *[
+            f"| {bucket} | {m.get('action')} | {m.get('settled')} | {m.get('roi')} | {m.get('pnl')} | {m.get('win_rate')} |"
+            for bucket, m in sorted(bucket_policies.items())
+        ],
         "",
         "## Research Pipeline",
         "",
