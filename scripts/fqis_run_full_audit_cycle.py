@@ -294,6 +294,99 @@ def inject_research_screening_diagnostics_into_latest_full_cycle_report() -> Non
     report_path.write_text(report, encoding="utf-8")
 
 
+
+def inject_fixture_level_research_into_latest_full_cycle_report() -> None:
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+
+    report_path = (
+        root
+        / "data"
+        / "pipeline"
+        / "api_sports"
+        / "orchestrator"
+        / "latest_full_cycle_report.md"
+    )
+
+    fixture_path = (
+        root
+        / "data"
+        / "pipeline"
+        / "api_sports"
+        / "research_ledger"
+        / "latest_fixture_level_research_report.json"
+    )
+
+    if not report_path.exists() or not fixture_path.exists():
+        return
+
+    try:
+        fixture_payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    snapshot = fixture_payload.get("snapshot") or {}
+    fixture = fixture_payload.get("fixture") or {}
+    side = fixture_payload.get("side_distribution") or {}
+    concentration = fixture_payload.get("concentration") or []
+
+    section_lines = [
+        "## Fixture-Level Research Read",
+        "",
+        "> Official conservative read: one economic thesis per fixture. Snapshot PnL remains diagnostic only.",
+        "",
+        f"- Ledger rows: **{fixture_payload.get('ledger_rows', 0)}**",
+        f"- Snapshot settled: **{snapshot.get('settled', 0)}**",
+        f"- Snapshot PnL: **{snapshot.get('pnl_unit', 0)}u**",
+        f"- Fixture-level settled: **{fixture.get('settled', 0)}**",
+        f"- Fixture-level PnL: **{fixture.get('pnl_unit', 0)}u**",
+        f"- Fixture-level ROI: **{fixture.get('roi_unit', 0)}**",
+        f"- Fixture-level wins/losses/pushes: **{fixture.get('wins', 0)} / {fixture.get('losses', 0)} / {fixture.get('pushes', 0)}**",
+        f"- UNDER share: **{float(side.get('under_share', 0)) * 100:.2f}%**",
+        f"- OVER share: **{float(side.get('over_share', 0)) * 100:.2f}%**",
+        "",
+        "| Match | Snapshot rows | Snapshot PnL | Fixture PnL | First selection | First odds | First result |",
+        "|---|---:|---:|---:|---|---:|---|",
+    ]
+
+    for row in concentration[:10]:
+        section_lines.append(
+            "| {match} | {snapshot_rows} | {snapshot_pnl} | {fixture_pnl} | {first_selection} | {first_odds} | {first_result} |".format(
+                match=str(row.get("match", "")).replace("|", "/"),
+                snapshot_rows=row.get("snapshot_rows", 0),
+                snapshot_pnl=row.get("snapshot_pnl", 0),
+                fixture_pnl=row.get("fixture_pnl", 0),
+                first_selection=row.get("first_selection", ""),
+                first_odds=row.get("first_odds", ""),
+                first_result=row.get("first_result", ""),
+            )
+        )
+
+    section_lines.append("")
+
+    section = "\n".join(section_lines)
+
+    report = report_path.read_text(encoding="utf-8")
+
+    report = re.sub(
+        r"\n## Fixture-Level Research Read\n.*?(?=\n## )",
+        "\n",
+        report,
+        flags=re.DOTALL,
+    )
+
+    marker = "\n## Fixed-Horizon CLV"
+    if marker in report:
+        report = report.replace(marker, "\n" + section + marker, 1)
+    else:
+        report = report.rstrip() + "\n\n" + section + "\n"
+
+    report_path.write_text(report, encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-bridge", action="store_true")
@@ -386,5 +479,17 @@ def main() -> int:
 
 if __name__ == "__main__":
     exit_code = main()
+
+    # Fixture-level report is conservative anti-duplication research accounting.
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    fixture_script = root / "scripts" / "fqis_fixture_level_research_report.py"
+    if fixture_script.exists():
+        subprocess.run([sys.executable, str(fixture_script)], check=False)
+
     inject_research_screening_diagnostics_into_latest_full_cycle_report()
+    inject_fixture_level_research_into_latest_full_cycle_report()
     raise SystemExit(exit_code)
