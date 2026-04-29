@@ -25,6 +25,8 @@ REPORT_PATHS = {
     "provider_coverage": ROOT / "data" / "pipeline" / "api_sports" / "provider_coverage" / "latest_provider_coverage_report.json",
     "daily_audit": ROOT / "data" / "pipeline" / "api_sports" / "audit" / "latest_daily_audit_report.json",
     "final_pipeline_audit": ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_final_pipeline_audit.json",
+    "bucket_alpha_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_alpha_audit.json",
+    "bucket_policy_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_policy_audit.json",
 }
 
 
@@ -457,6 +459,8 @@ def main() -> int:
         ("09_daily_audit", "fqis_daily_audit_report.py"),
         ("10_final_pipeline_audit", "fqis_final_pipeline_audit.py"),
         ("11_level3_invariant_report", "fqis_level3_invariant_report.py"),
+        ("12_bucket_alpha_audit", "fqis_bucket_alpha_audit.py"),
+        ("13_bucket_policy_audit", "fqis_bucket_policy_audit.py"),
     ]
 
     for label, script in scripts:
