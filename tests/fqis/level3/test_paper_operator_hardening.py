@@ -193,7 +193,24 @@ def patch_quality_paths(monkeypatch, tmp_path: Path) -> dict[str, Path]:
     return paths
 
 
-def write_quality_inputs(paths: dict[str, Path], *, monitor_status: str = "READY", decisions_total: int = 7, unsafe: bool = False) -> None:
+def write_quality_inputs(
+    paths: dict[str, Path],
+    *,
+    monitor_status: str = "READY",
+    decisions_total: int = 7,
+    unsafe: bool = False,
+    freshness_flags: list[str] | None = None,
+    historical_static_review: list[str] | None = None,
+    raw_new_paper_alerts: int = 2,
+    canonical_new_alerts: int = 1,
+    material_updates: int = 0,
+) -> None:
+    final_freshness_flags = freshness_flags or ["OK_FRESH_LIVE_CYCLE"]
+    final_historical_static_review = (
+        ["CONSTANT_POST_QUARANTINE_PNL_REVIEW"]
+        if historical_static_review is None
+        else historical_static_review
+    )
     row = {
         "cycle": 1,
         "full_cycle_status": "READY",
@@ -207,9 +224,9 @@ def write_quality_inputs(paths: dict[str, Path], *, monitor_status: str = "READY
         "grouped_ranked_alert_count": 1,
         "new_snapshots_appended": 3,
         "new_paper_alerts": 1,
-        "raw_new_paper_alerts": 2,
-        "new_canonical_alerts": 1,
-        "material_updates": 0,
+        "raw_new_paper_alerts": raw_new_paper_alerts,
+        "new_canonical_alerts": canonical_new_alerts,
+        "material_updates": material_updates,
         "ledger_preserved": not unsafe,
         "can_execute_real_bets": False,
         "can_enable_live_staking": False,
@@ -232,8 +249,8 @@ def write_quality_inputs(paths: dict[str, Path], *, monitor_status: str = "READY
     write_json(paths["digest"], {
         "final_full_cycle_status": "READY",
         "ledger_preserved_final": not unsafe,
-        "freshness_flags_final": ["OK_FRESH_LIVE_CYCLE"],
-        "historical_static_review_final": ["CONSTANT_POST_QUARANTINE_PNL_REVIEW"],
+        "freshness_flags_final": final_freshness_flags,
+        "historical_static_review_final": final_historical_static_review,
         "any_real_bets_enabled": False,
         "any_live_staking_enabled": False,
         "any_promotion_allowed": False,
@@ -246,11 +263,16 @@ def write_quality_inputs(paths: dict[str, Path], *, monitor_status: str = "READY
         "promotion_allowed": False,
     })
     write_json(paths["ranker"], {"status": "READY"})
-    write_json(paths["dedupe"], {"status": "READY", "raw_new_alerts": 2, "new_canonical_alerts": 1})
+    write_json(paths["dedupe"], {
+        "status": "READY",
+        "raw_new_alerts": raw_new_paper_alerts,
+        "new_canonical_alerts": canonical_new_alerts,
+        "material_updates": material_updates,
+    })
     write_json(paths["freshness"], {
         "status": "READY",
-        "freshness_flags": ["OK_FRESH_LIVE_CYCLE"],
-        "historical_metric_static_review": ["CONSTANT_POST_QUARANTINE_PNL_REVIEW"],
+        "freshness_flags": final_freshness_flags,
+        "historical_metric_static_review": final_historical_static_review,
     })
     write_json(paths["full_cycle"], {"status": "READY"})
 
@@ -265,6 +287,7 @@ def test_session_quality_report_emits_quality_states(monkeypatch, tmp_path):
     write_quality_inputs(paths)
     payload = quality.build_payload()
     assert payload["quality_state"] == "SESSION_GREEN"
+    assert payload["recommended_next_action"] == "CONTINUE_PAPER_SHADOW_MONITORING"
     assert payload["can_execute_real_bets"] is False
     assert payload["can_enable_live_staking"] is False
     assert payload["can_mutate_ledger"] is False
@@ -275,10 +298,77 @@ def test_session_quality_report_emits_quality_states(monkeypatch, tmp_path):
     payload = quality.build_payload()
     assert payload["quality_state"] == "SESSION_REVIEW"
     assert payload["zero_decision_cycles"] == 1
+    assert payload["recommended_next_action"] == "REVIEW_ZERO_DECISION_CYCLES"
 
     write_quality_inputs(paths, monitor_status="STOPPED")
     payload = quality.build_payload()
     assert payload["quality_state"] == "SESSION_BLOCKED"
+    assert payload["recommended_next_action"] == "STOP_SESSION_AND_INSPECT_SAFETY"
+
+
+def test_session_quality_recommended_next_action_branches(monkeypatch, tmp_path):
+    paths = patch_quality_paths(monkeypatch, tmp_path)
+
+    write_quality_inputs(paths, decisions_total=0)
+    zero_only = quality.build_payload()
+    assert zero_only["quality_state"] == "SESSION_REVIEW"
+    assert zero_only["recommended_next_action"] == "REVIEW_ZERO_DECISION_CYCLES"
+
+    write_quality_inputs(
+        paths,
+        freshness_flags=["STALE_LIVE_DECISIONS_REVIEW"],
+        historical_static_review=[],
+    )
+    freshness_only = quality.build_payload()
+    assert freshness_only["quality_state"] == "SESSION_REVIEW"
+    assert freshness_only["live_review_flags_final"] == ["STALE_LIVE_DECISIONS_REVIEW"]
+    assert freshness_only["recommended_next_action"] == "REVIEW_FRESHNESS_FLAGS"
+
+    write_quality_inputs(
+        paths,
+        decisions_total=0,
+        freshness_flags=["STALE_LIVE_DECISIONS_REVIEW"],
+        historical_static_review=[],
+    )
+    combined = quality.build_payload()
+    assert combined["quality_state"] == "SESSION_REVIEW"
+    assert combined["zero_decision_cycles"] == 1
+    assert combined["live_review_flags_final"] == ["STALE_LIVE_DECISIONS_REVIEW"]
+    assert combined["recommended_next_action"] == "REVIEW_ZERO_DECISIONS_AND_FRESHNESS"
+
+    for payload in [zero_only, freshness_only, combined]:
+        assert payload["can_execute_real_bets"] is False
+        assert payload["can_enable_live_staking"] is False
+        assert payload["can_mutate_ledger"] is False
+        assert payload["live_staking_allowed"] is False
+        assert payload["promotion_allowed"] is False
+        safety = payload["safety_flags"]
+        assert safety["any_real_bets_enabled"] is False
+        assert safety["any_live_staking_enabled"] is False
+        assert safety["any_promotion_allowed"] is False
+
+
+def test_session_quality_material_updates_count_toward_sendable_ratio(monkeypatch, tmp_path):
+    paths = patch_quality_paths(monkeypatch, tmp_path)
+    write_quality_inputs(
+        paths,
+        raw_new_paper_alerts=12,
+        canonical_new_alerts=2,
+        material_updates=4,
+    )
+
+    payload = quality.build_payload()
+
+    assert payload["quality_state"] == "SESSION_GREEN"
+    assert payload["total_sendable_canonical_events"] == 6
+    assert payload["raw_to_canonical_new_ratio"] == 6.0
+    assert payload["raw_to_sendable_canonical_ratio"] == 2.0
+    assert payload["alert_noise_ratio"] == payload["raw_to_canonical_new_ratio"]
+    assert payload["can_execute_real_bets"] is False
+    assert payload["can_enable_live_staking"] is False
+    assert payload["can_mutate_ledger"] is False
+    assert payload["live_staking_allowed"] is False
+    assert payload["promotion_allowed"] is False
 
 
 def test_session_quality_report_script_runs_and_preserves_ledger():

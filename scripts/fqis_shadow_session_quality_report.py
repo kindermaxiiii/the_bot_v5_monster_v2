@@ -131,6 +131,29 @@ def safe_text(value: Any) -> str:
     return str(value or "").replace("\n", " ").strip()
 
 
+def recommended_next_action_for(
+    *,
+    quality_state: str,
+    unsafe: bool,
+    monitor_stopped: bool,
+    zero_decision_cycles: int,
+    live_review_flags_final: list[str],
+) -> str:
+    if unsafe or monitor_stopped:
+        return "STOP_SESSION_AND_INSPECT_SAFETY"
+    has_zero_decisions = zero_decision_cycles > 0
+    has_live_review_flags = bool(live_review_flags_final)
+    if has_zero_decisions and has_live_review_flags:
+        return "REVIEW_ZERO_DECISIONS_AND_FRESHNESS"
+    if has_zero_decisions:
+        return "REVIEW_ZERO_DECISION_CYCLES"
+    if has_live_review_flags:
+        return "REVIEW_FRESHNESS_FLAGS"
+    if quality_state == "SESSION_GREEN":
+        return "CONTINUE_PAPER_SHADOW_MONITORING"
+    return "REVIEW_SESSION_CONTEXT"
+
+
 def build_payload() -> dict[str, Any]:
     generated_at_utc = utc_now()
     monitor = read_json(MONITOR_JSON)
@@ -273,18 +296,28 @@ def build_payload() -> dict[str, Any]:
 
     if monitor_stopped or unsafe:
         quality_state = "SESSION_BLOCKED"
-        recommended_next_action = "STOP_SESSION_AND_INSPECT_SAFETY"
     elif zero_decision_cycle_numbers or live_flags:
         quality_state = "SESSION_REVIEW"
-        recommended_next_action = "REVIEW_ZERO_DECISIONS_OR_FRESHNESS"
     elif full_cycle_ready and full_cycle_all_ready and all_ledger_preserved and not live_flags:
         quality_state = "SESSION_GREEN"
-        recommended_next_action = "CONTINUE_PAPER_SHADOW_MONITORING"
     else:
         quality_state = "SESSION_REVIEW"
-        recommended_next_action = "REVIEW_SESSION_CONTEXT"
 
-    alert_noise_ratio = round(total_raw_new_paper_alerts / max(1, total_canonical_new_alerts), 6)
+    recommended_next_action = recommended_next_action_for(
+        quality_state=quality_state,
+        unsafe=unsafe,
+        monitor_stopped=monitor_stopped,
+        zero_decision_cycles=len(zero_decision_cycle_numbers),
+        live_review_flags_final=live_flags,
+    )
+
+    total_sendable_canonical_events = total_canonical_new_alerts + total_material_updates
+    raw_to_canonical_new_ratio = round(total_raw_new_paper_alerts / max(1, total_canonical_new_alerts), 6)
+    raw_to_sendable_canonical_ratio = round(
+        total_raw_new_paper_alerts / max(1, total_sendable_canonical_events),
+        6,
+    )
+    alert_noise_ratio = raw_to_canonical_new_ratio
 
     payload = {
         "mode": "FQIS_SHADOW_SESSION_QUALITY_REPORT",
@@ -312,6 +345,9 @@ def build_payload() -> dict[str, Any]:
         "total_raw_new_paper_alerts": total_raw_new_paper_alerts,
         "total_canonical_new_alerts": total_canonical_new_alerts,
         "total_material_updates": total_material_updates,
+        "total_sendable_canonical_events": total_sendable_canonical_events,
+        "raw_to_canonical_new_ratio": raw_to_canonical_new_ratio,
+        "raw_to_sendable_canonical_ratio": raw_to_sendable_canonical_ratio,
         "alert_noise_ratio": alert_noise_ratio,
         "decisions_total": stat_block(rows, "decisions_total"),
         "candidates_this_cycle": stat_block(rows, "candidates_this_cycle"),
@@ -355,6 +391,9 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Raw new paper alerts: **{payload.get('total_raw_new_paper_alerts', 0)}**",
         f"- Canonical new alerts: **{payload.get('total_canonical_new_alerts', 0)}**",
         f"- Material updates: **{payload.get('total_material_updates', 0)}**",
+        f"- Sendable canonical events: **{payload.get('total_sendable_canonical_events', 0)}**",
+        f"- Raw/canonical new ratio: **{payload.get('raw_to_canonical_new_ratio')}**",
+        f"- Raw/sendable canonical ratio: **{payload.get('raw_to_sendable_canonical_ratio')}**",
         f"- Alert noise ratio: **{payload.get('alert_noise_ratio')}**",
         f"- Final verdict: **{payload.get('final_verdict')}**",
         f"- Recommended next action: **{payload.get('recommended_next_action')}**",
