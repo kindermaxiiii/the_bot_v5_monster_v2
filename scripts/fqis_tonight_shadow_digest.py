@@ -168,6 +168,24 @@ def build_digest() -> dict[str, Any]:
         total_new_paper_alerts = sum(int(row.get("new_paper_alerts") or 0) for row in rows)
         if not rows:
             total_new_paper_alerts = paper_dedupe.get("new_alerts", 0)
+    total_raw_new_paper_alerts = summary.get("total_raw_new_paper_alerts")
+    if total_raw_new_paper_alerts is None:
+        total_raw_new_paper_alerts = sum(
+            int(row.get("raw_new_paper_alerts") or row.get("new_paper_alerts") or 0)
+            for row in rows
+        )
+        if not rows:
+            total_raw_new_paper_alerts = paper_dedupe.get("raw_new_alerts", total_new_paper_alerts)
+    total_canonical_new_alerts = summary.get("total_canonical_new_alerts")
+    if total_canonical_new_alerts is None:
+        total_canonical_new_alerts = sum(int(row.get("new_canonical_alerts") or 0) for row in rows)
+        if not rows:
+            total_canonical_new_alerts = paper_dedupe.get("new_canonical_alerts", total_new_paper_alerts)
+    total_material_updates = summary.get("total_material_updates")
+    if total_material_updates is None:
+        total_material_updates = sum(int(row.get("material_updates") or 0) for row in rows)
+        if not rows:
+            total_material_updates = paper_dedupe.get("material_updates", 0)
     total_repeated_paper_alerts = summary.get("total_repeated_paper_alerts")
     if total_repeated_paper_alerts is None:
         total_repeated_paper_alerts = sum(int(row.get("repeated_paper_alerts") or 0) for row in rows)
@@ -259,6 +277,9 @@ def build_digest() -> dict[str, Any]:
         "any_live_staking_enabled": any_live_staking_enabled,
         "any_promotion_allowed": any_promotion_allowed,
         "total_new_paper_alerts": total_new_paper_alerts,
+        "total_raw_new_paper_alerts": total_raw_new_paper_alerts,
+        "total_canonical_new_alerts": total_canonical_new_alerts,
+        "total_material_updates": total_material_updates,
         "total_repeated_paper_alerts": total_repeated_paper_alerts,
         "any_sendable_discord_payload": any_sendable_discord_payload,
         "final_paper_signals_total": final_paper_signals_total,
@@ -294,6 +315,9 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "any_live_staking_enabled",
         "any_promotion_allowed",
         "total_new_paper_alerts",
+        "total_raw_new_paper_alerts",
+        "total_canonical_new_alerts",
+        "total_material_updates",
         "total_repeated_paper_alerts",
         "any_sendable_discord_payload",
         "final_paper_signals_total",

@@ -22,6 +22,7 @@ PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
 OPERATOR_PAPER_DECISION_SHEET_JSON = ORCH_DIR / "latest_operator_paper_decision_sheet.json"
 DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 OPERATOR_CONSOLE_JSON = ORCH_DIR / "latest_operator_shadow_console.json"
+OPERATOR_CONSOLE_SCRIPT = ROOT / "scripts" / "fqis_operator_shadow_console.py"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
 OUT_MD = ORCH_DIR / "latest_tonight_shadow_monitor.md"
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -140,6 +141,21 @@ def run_full_cycle(
     return result
 
 
+def refresh_operator_console_after_monitor_write() -> None:
+    if not OPERATOR_CONSOLE_SCRIPT.exists():
+        return
+    subprocess.run(
+        [CHILD_PYTHON, str(OPERATOR_CONSOLE_SCRIPT)],
+        cwd=str(ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+
 def build_cycle_row(cycle_number: int, run_result: dict[str, Any]) -> dict[str, Any]:
     full_cycle = read_json(FULL_CYCLE_JSON)
     go_no_go = read_json(GO_NO_GO_JSON)
@@ -192,8 +208,17 @@ def build_cycle_row(cycle_number: int, run_result: dict[str, Any]) -> dict[str, 
         "paper_signals_total": paper_signal_export.get("paper_signals_total")
         or paper_signal_export.get("total_decisions"),
         "ranked_alert_count": paper_alert_ranker.get("ranked_alert_count"),
+        "raw_ranked_alert_count": paper_alert_ranker.get("raw_ranked_alert_count")
+        or paper_alert_ranker.get("ranked_alert_count"),
+        "grouped_ranked_alert_count": paper_alert_ranker.get("grouped_ranked_alert_count")
+        or paper_alert_ranker.get("top_ranked_alert_count"),
         "top_ranked_alert_count": paper_alert_ranker.get("top_ranked_alert_count"),
         "new_paper_alerts": paper_alert_dedupe.get("new_alerts"),
+        "raw_new_paper_alerts": paper_alert_dedupe.get("raw_new_alerts") or paper_alert_dedupe.get("new_alerts"),
+        "new_canonical_alerts": paper_alert_dedupe.get("new_canonical_alerts") or 0,
+        "updated_canonical_alerts": paper_alert_dedupe.get("updated_canonical_alerts") or 0,
+        "repeated_canonical_alerts": paper_alert_dedupe.get("repeated_canonical_alerts") or 0,
+        "material_updates": paper_alert_dedupe.get("material_updates") or 0,
         "repeated_paper_alerts": paper_alert_dedupe.get("repeated_alerts"),
         "sendable_discord_payload": discord_payload.get("sendable") is True,
     }
@@ -258,6 +283,8 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_values = numeric_values(rows, "candidates_this_cycle")
     paper_signal_values = numeric_values(rows, "paper_signals_total")
     ranked_alert_values = numeric_values(rows, "ranked_alert_count")
+    raw_ranked_alert_values = numeric_values(rows, "raw_ranked_alert_count")
+    grouped_ranked_alert_values = numeric_values(rows, "grouped_ranked_alert_count")
 
     return {
         "first_timestamp": first_timestamp,
@@ -277,7 +304,14 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "max_paper_signals_total": max(paper_signal_values) if paper_signal_values else None,
         "min_ranked_alert_count": min(ranked_alert_values) if ranked_alert_values else None,
         "max_ranked_alert_count": max(ranked_alert_values) if ranked_alert_values else None,
+        "min_raw_ranked_alert_count": min(raw_ranked_alert_values) if raw_ranked_alert_values else None,
+        "max_raw_ranked_alert_count": max(raw_ranked_alert_values) if raw_ranked_alert_values else None,
+        "min_grouped_ranked_alert_count": min(grouped_ranked_alert_values) if grouped_ranked_alert_values else None,
+        "max_grouped_ranked_alert_count": max(grouped_ranked_alert_values) if grouped_ranked_alert_values else None,
         "total_new_paper_alerts": sum(int(row.get("new_paper_alerts") or 0) for row in rows),
+        "total_raw_new_paper_alerts": sum(int(row.get("raw_new_paper_alerts") or row.get("new_paper_alerts") or 0) for row in rows),
+        "total_canonical_new_alerts": sum(int(row.get("new_canonical_alerts") or 0) for row in rows),
+        "total_material_updates": sum(int(row.get("material_updates") or 0) for row in rows),
         "total_repeated_paper_alerts": sum(int(row.get("repeated_paper_alerts") or 0) for row in rows),
         "any_sendable_discord_payload": any(row.get("sendable_discord_payload") is True for row in rows),
         "all_ledger_preserved": bool(rows) and all(row.get("ledger_preserved") is True for row in rows),
@@ -350,7 +384,14 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "max_paper_signals_total",
         "min_ranked_alert_count",
         "max_ranked_alert_count",
+        "min_raw_ranked_alert_count",
+        "max_raw_ranked_alert_count",
+        "min_grouped_ranked_alert_count",
+        "max_grouped_ranked_alert_count",
         "total_new_paper_alerts",
+        "total_raw_new_paper_alerts",
+        "total_canonical_new_alerts",
+        "total_material_updates",
         "total_repeated_paper_alerts",
         "any_sendable_discord_payload",
         "all_ledger_preserved",
@@ -495,6 +536,8 @@ def main() -> int:
         else:
             print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
         return 130 if status == "MANUALLY_INTERRUPTED" else 2
+
+    refresh_operator_console_after_monitor_write()
 
     if args.quiet:
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True))

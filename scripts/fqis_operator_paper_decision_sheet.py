@@ -21,6 +21,8 @@ SAFETY_BLOCK = {
     "can_execute_real_bets": False,
     "can_enable_live_staking": False,
     "can_mutate_ledger": False,
+    "live_staking_allowed": False,
+    "promotion_allowed": False,
     "paper_only": True,
 }
 
@@ -75,16 +77,18 @@ def fmt(value: Any) -> str:
 def table_row(alert: dict[str, Any]) -> dict[str, Any]:
     return {
         "Rank": alert.get("rank"),
+        "Fixture": alert.get("fixture_id"),
         "Match": alert.get("match") or alert.get("fixture_id"),
         "Minute": alert.get("minute"),
         "Score": alert.get("score"),
+        "Market": alert.get("market"),
         "Selection": alert.get("selection"),
-        "Odds": alert.get("odds"),
-        "Edge": alert.get("edge_prob"),
-        "EV": alert.get("ev_real"),
+        "Odds latest": alert.get("odds_latest", alert.get("odds")),
+        "Edge latest": alert.get("edge_latest", alert.get("edge_prob")),
+        "EV latest": alert.get("ev_latest", alert.get("ev_real")),
         "Tier": alert.get("data_tier"),
         "Bucket action": alert.get("bucket_policy_action"),
-        "Paper action": alert.get("paper_action"),
+        "Lifecycle": alert.get("alert_lifecycle_status"),
         "Operator note": alert.get("operator_note"),
     }
 
@@ -157,12 +161,17 @@ def build_payload() -> dict[str, Any]:
     if unsafe_hits:
         reasons.append("UNSAFE_TRUE_FLAGS:" + ",".join(unsafe_hits[:20]))
 
-    ranked_alerts = ranker.get("ranked_alerts") or []
+    ranked_alerts = ranker.get("raw_ranked_alerts") or ranker.get("ranked_alerts") or []
     if not isinstance(ranked_alerts, list):
         ranked_alerts = []
         reasons.append("RANKED_ALERTS_NOT_LIST")
     ranked_alerts = [alert for alert in ranked_alerts if isinstance(alert, dict)]
-    top_alerts = ranked_alerts[:10]
+    grouped_alerts = ranker.get("grouped_ranked_alerts") or ranker.get("top_ranked_alerts") or ranked_alerts
+    if not isinstance(grouped_alerts, list):
+        grouped_alerts = []
+        reasons.append("GROUPED_ALERTS_NOT_LIST")
+    grouped_alerts = [alert for alert in grouped_alerts if isinstance(alert, dict)]
+    top_alerts = grouped_alerts[:10]
     table = [table_row(alert) for alert in top_alerts]
 
     safety_state = {
@@ -193,9 +202,17 @@ def build_payload() -> dict[str, Any]:
         },
         "top_ranked_alert_count": len(top_alerts),
         "ranked_alert_count": len(ranked_alerts),
+        "raw_ranked_alert_count": len(ranked_alerts),
+        "grouped_ranked_alert_count": len(grouped_alerts),
         "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
+        "updated_ranked_alert_count": ranker.get("updated_ranked_alert_count") or 0,
         "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
         "new_paper_alerts": dedupe.get("new_alerts") or 0,
+        "raw_new_paper_alerts": dedupe.get("raw_new_alerts") or dedupe.get("new_alerts") or 0,
+        "new_canonical_alerts": dedupe.get("new_canonical_alerts") or 0,
+        "updated_canonical_alerts": dedupe.get("updated_canonical_alerts") or 0,
+        "repeated_canonical_alerts": dedupe.get("repeated_canonical_alerts") or 0,
+        "material_updates": dedupe.get("material_updates") or 0,
         "repeated_paper_alerts": dedupe.get("repeated_alerts") or 0,
         "top_paper_alerts": top_alerts,
         "operator_table": table,
@@ -228,28 +245,33 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         "## Top paper alerts",
         "",
-        "| Rank | Match | Minute | Score | Selection | Odds | Edge | EV | Tier | Bucket action | Paper action | Operator note |",
-        "|---:|---|---:|---|---|---:|---:|---:|---|---|---|---|",
+        f"- Raw ranked alert count: **{payload.get('raw_ranked_alert_count', payload.get('ranked_alert_count', 0))}**",
+        f"- Grouped ranked alert count: **{payload.get('grouped_ranked_alert_count', 0)}**",
+        "",
+        "| Rank | Fixture | Match | Minute | Score | Market | Selection | Odds latest | EV latest | Edge latest | Tier | Bucket action | Lifecycle | Operator note |",
+        "|---:|---|---|---:|---|---|---|---:|---:|---:|---|---|---|---|",
     ]
 
     rows = payload.get("operator_table") or []
     if not rows:
-        lines.append("|  | No useful ranked paper alerts |  |  |  |  |  |  |  |  |  | PAPER ONLY / NO REAL BET / NO STAKE / NO EXECUTION |")
+        lines.append("|  |  | No useful ranked paper alerts |  |  |  |  |  |  |  |  |  |  | PAPER ONLY / NO REAL BET / NO STAKE / NO EXECUTION |")
     else:
         for row in rows:
             lines.append(
-                "| {Rank} | {Match} | {Minute} | {Score} | {Selection} | {Odds} | {Edge} | {EV} | {Tier} | {Bucket_action} | {Paper_action} | {Operator_note} |".format(
+                "| {Rank} | {Fixture} | {Match} | {Minute} | {Score} | {Market} | {Selection} | {Odds_latest} | {EV_latest} | {Edge_latest} | {Tier} | {Bucket_action} | {Lifecycle} | {Operator_note} |".format(
                     Rank=fmt(row.get("Rank")),
+                    Fixture=fmt(row.get("Fixture")),
                     Match=fmt(row.get("Match")),
                     Minute=fmt(row.get("Minute")),
                     Score=fmt(row.get("Score")),
+                    Market=fmt(row.get("Market")),
                     Selection=fmt(row.get("Selection")),
-                    Odds=fmt(row.get("Odds")),
-                    Edge=fmt(row.get("Edge")),
-                    EV=fmt(row.get("EV")),
+                    Odds_latest=fmt(row.get("Odds latest")),
+                    Edge_latest=fmt(row.get("Edge latest")),
+                    EV_latest=fmt(row.get("EV latest")),
                     Tier=fmt(row.get("Tier")),
                     Bucket_action=fmt(row.get("Bucket action")),
-                    Paper_action=fmt(row.get("Paper action")),
+                    Lifecycle=fmt(row.get("Lifecycle")),
                     Operator_note=fmt(row.get("Operator note")),
                 )
             )

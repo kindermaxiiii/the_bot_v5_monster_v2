@@ -48,6 +48,10 @@ def test_operator_paper_decision_sheet_compiles_runs_preserves_ledger_and_warns(
     assert payload["can_execute_real_bets"] is False
     assert payload["can_enable_live_staking"] is False
     assert payload["can_mutate_ledger"] is False
+    assert payload["live_staking_allowed"] is False
+    assert payload["promotion_allowed"] is False
+    assert "grouped_ranked_alert_count" in payload
+    assert "raw_ranked_alert_count" in payload
 
     md = OUT_MD.read_text(encoding="utf-8")
     for text in ["PAPER ONLY", "NO REAL BET", "NO STAKE", "NO EXECUTION"]:

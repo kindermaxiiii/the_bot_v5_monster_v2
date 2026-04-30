@@ -41,6 +41,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "22_operator_paper_decision_sheet",
         "23_discord_paper_payload",
         "24_operator_shadow_console",
+        "25_shadow_session_quality_report",
     ]:
         assert labels.count(label) == 1
 
@@ -53,6 +54,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "## Operator Paper Decision Sheet",
         "## Discord Paper Payload",
         "## Operator Shadow Console",
+        "## Shadow Session Quality",
     ]:
         assert report.count(section) == 1
 
@@ -64,6 +66,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "operator_paper_decision_sheet",
         "discord_paper_payload",
         "operator_shadow_console",
+        "shadow_session_quality",
     ]:
         assert name in reports
     assert reports["paper_alert_ranker"]["can_execute_real_bets"] is False
@@ -76,4 +79,10 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "PAPER_READY",
         "PAPER_REVIEW",
         "PAPER_BLOCKED",
+    }
+    assert reports["shadow_session_quality"]["quality_state"] in {
+        "SESSION_GREEN",
+        "SESSION_REVIEW",
+        "SESSION_BLOCKED",
+        "NO_MONITOR_SESSION_AVAILABLE",
     }

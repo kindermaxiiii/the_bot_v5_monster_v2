@@ -49,6 +49,7 @@ REPORT_PATHS = {
     "operator_paper_decision_sheet": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_paper_decision_sheet.json",
     "discord_paper_payload": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_discord_paper_payload.json",
     "operator_shadow_console": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.json",
+    "shadow_session_quality": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_session_quality_report.json",
 }
 
 
@@ -234,6 +235,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     decision_sheet = reports.get("operator_paper_decision_sheet", {})
     discord_payload = reports.get("discord_paper_payload", {})
     operator_console = reports.get("operator_shadow_console", {})
+    shadow_session_quality = reports.get("shadow_session_quality", {})
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -355,6 +357,18 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Total paper signals: **{operator_console.get('total_paper_signals', 0)}**",
         f"- Top ranked alerts: **{operator_console.get('top_ranked_alert_count', 0)}**",
         f"- New paper alerts: **{operator_console.get('new_paper_alerts', 0)}**",
+        "",
+        "## Shadow Session Quality",
+        "",
+        f"- Status: **{shadow_session_quality.get('status', 'NO_MONITOR_SESSION_AVAILABLE')}**",
+        f"- Quality state: **{shadow_session_quality.get('quality_state', shadow_session_quality.get('status', 'NO_MONITOR_SESSION_AVAILABLE'))}**",
+        f"- Cycles completed: **{shadow_session_quality.get('cycles_completed', 0)}**",
+        f"- Ready cycles: **{shadow_session_quality.get('ready_cycles', 0)}**",
+        f"- Raw new paper alerts: **{shadow_session_quality.get('total_raw_new_paper_alerts', 0)}**",
+        f"- Canonical new alerts: **{shadow_session_quality.get('total_canonical_new_alerts', 0)}**",
+        f"- Material updates: **{shadow_session_quality.get('total_material_updates', 0)}**",
+        f"- Alert noise ratio: **{shadow_session_quality.get('alert_noise_ratio', 0)}**",
+        f"- Recommended next action: **{shadow_session_quality.get('recommended_next_action', 'RUN_SHADOW_MONITOR')}**",
         "",
         "## Final Verdict",
         "",
@@ -742,6 +756,7 @@ def main() -> int:
         ("22_operator_paper_decision_sheet", "fqis_operator_paper_decision_sheet.py"),
         ("23_discord_paper_payload", "fqis_discord_paper_payload.py"),
         ("24_operator_shadow_console", "fqis_operator_shadow_console.py"),
+        ("25_shadow_session_quality_report", "fqis_shadow_session_quality_report.py"),
     ]
 
     generated_at_utc = utc_now()
@@ -774,6 +789,7 @@ def main() -> int:
             "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
+            "shadow_session_quality",
         }
     )
 
@@ -789,6 +805,7 @@ def main() -> int:
             "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
+            "shadow_session_quality",
         }
     )
 
@@ -803,6 +820,7 @@ def main() -> int:
             "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
+            "shadow_session_quality",
         }
     )
 
@@ -815,31 +833,44 @@ def main() -> int:
             "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
+            "shadow_session_quality",
         }
     )
 
     dedupe_label, dedupe_script = scripts[18]
     steps.append(run_step(dedupe_label, [CHILD_PYTHON, str(ROOT / "scripts" / dedupe_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
-        exclude={"paper_alert_ranker", "operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console"}
+        exclude={
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
     )
 
     ranker_label, ranker_script = scripts[19]
     steps.append(run_step(ranker_label, [CHILD_PYTHON, str(ROOT / "scripts" / ranker_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
-        exclude={"operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console"}
+        exclude={"operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
     sheet_label, sheet_script = scripts[20]
     steps.append(run_step(sheet_label, [CHILD_PYTHON, str(ROOT / "scripts" / sheet_script)], run_dir))
-    reports, ledger_restore, status, payload = write_stage(exclude={"discord_paper_payload", "operator_shadow_console"})
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={"discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
+    )
 
     discord_label, discord_script = scripts[21]
     steps.append(run_step(discord_label, [CHILD_PYTHON, str(ROOT / "scripts" / discord_script)], run_dir))
-    reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console"})
+    reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console", "shadow_session_quality"})
 
     operator_label, operator_script = scripts[22]
     steps.append(run_step(operator_label, [CHILD_PYTHON, str(ROOT / "scripts" / operator_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(exclude={"shadow_session_quality"})
+
+    quality_label, quality_script = scripts[23]
+    steps.append(run_step(quality_label, [CHILD_PYTHON, str(ROOT / "scripts" / quality_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
     write_master_report(payload)

@@ -33,6 +33,18 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_timestamp(value: Any) -> datetime | None:
+    try:
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except Exception:
+        return None
+
+
 def read_json(path: Path) -> dict[str, Any]:
     try:
         if not path.exists():
@@ -68,12 +80,36 @@ def safe_bool(*values: Any) -> bool:
     return any(truthy_flag(value) for value in values)
 
 
-def monitor_section(monitor: dict[str, Any]) -> dict[str, Any]:
+def monitor_section(monitor: dict[str, Any], full_cycle: dict[str, Any], operator_generated_at_utc: str) -> dict[str, Any]:
     summary = monitor.get("summary") or {}
     cycles_completed = monitor.get("cycles_completed")
+    cycles_requested = monitor.get("cycles_requested")
     has_cycles = bool(cycles_completed)
+    monitor_generated_at = monitor.get("generated_at_utc")
+    full_cycle_generated_at = full_cycle.get("generated_at_utc")
+    monitor_dt = parse_timestamp(monitor_generated_at)
+    full_cycle_dt = parse_timestamp(full_cycle_generated_at)
+    monitor_complete = (
+        has_cycles
+        and (
+            monitor.get("status") in {"READY", "STOPPED", "MANUALLY_INTERRUPTED"}
+            and (not cycles_requested or int(cycles_completed or 0) >= int(cycles_requested or 0) or monitor.get("status") == "STOPPED")
+        )
+    )
+    stale_for_current_full_cycle = bool(full_cycle_dt and monitor_dt and monitor_dt < full_cycle_dt)
+    if not monitor or monitor.get("missing") or monitor.get("error"):
+        context = "NO_MONITOR_CONTEXT"
+    elif not monitor_complete or stale_for_current_full_cycle:
+        context = "PARTIAL_MONITOR_CONTEXT"
+    else:
+        context = "FINAL_MONITOR_CONTEXT"
     return {
+        "monitor_context": context,
+        "monitor_artifact_generated_at_utc": monitor_generated_at,
+        "operator_console_generated_at_utc": operator_generated_at_utc,
+        "full_cycle_generated_at_utc": full_cycle_generated_at,
         "cycles_completed": cycles_completed,
+        "cycles_requested": cycles_requested,
         "stopped_reason": monitor.get("stopped_reason"),
         "all_ledger_preserved": summary.get("all_ledger_preserved") if has_cycles else None,
         "any_real_bets_enabled": summary.get("any_real_bets_enabled") if has_cycles else None,
@@ -278,19 +314,29 @@ def build_payload() -> dict[str, Any]:
         "paper_alert_ranker_status": ranker.get("status"),
         "operator_paper_decision_sheet_status": decision_sheet.get("status"),
         "ranked_alert_count": ranked_alert_count,
+        "raw_ranked_alert_count": ranker.get("raw_ranked_alert_count") or ranked_alert_count,
+        "grouped_ranked_alert_count": ranker.get("grouped_ranked_alert_count") or top_ranked_alert_count,
         "top_ranked_alert_count": top_ranked_alert_count,
         "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
+        "updated_ranked_alert_count": ranker.get("updated_ranked_alert_count") or 0,
         "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
         "new_paper_alerts": dedupe.get("new_alerts") or 0,
+        "raw_new_paper_alerts": dedupe.get("raw_new_alerts") or dedupe.get("new_alerts") or 0,
+        "new_canonical_alerts": dedupe.get("new_canonical_alerts") or 0,
+        "updated_canonical_alerts": dedupe.get("updated_canonical_alerts") or 0,
+        "repeated_canonical_alerts": dedupe.get("repeated_canonical_alerts") or 0,
+        "material_updates": dedupe.get("material_updates") or 0,
         "repeated_paper_alerts": dedupe.get("repeated_alerts") or 0,
         "sendable_discord_payload": discord_payload.get("sendable") is True,
     }
-    monitor_info = monitor_section(monitor)
+    monitor_info = monitor_section(monitor, full_cycle, generated_at_utc)
 
     return {
         "mode": "FQIS_OPERATOR_SHADOW_CONSOLE",
         "status": status,
         "generated_at_utc": generated_at_utc,
+        "operator_console_generated_at_utc": generated_at_utc,
+        "monitor_artifact_generated_at_utc": monitor_info.get("monitor_artifact_generated_at_utc"),
         "operator_state": operator_state,
         "next_action": next_action,
         "reasons": reasons,
@@ -304,8 +350,11 @@ def build_payload() -> dict[str, Any]:
         "paper_alert_ranker": {
             "status": ranker.get("status"),
             "ranked_alert_count": ranked_alert_count,
+            "raw_ranked_alert_count": ranker.get("raw_ranked_alert_count") or ranked_alert_count,
+            "grouped_ranked_alert_count": ranker.get("grouped_ranked_alert_count") or top_ranked_alert_count,
             "top_ranked_alert_count": top_ranked_alert_count,
             "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
+            "updated_ranked_alert_count": ranker.get("updated_ranked_alert_count") or 0,
             "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
         },
         "operator_paper_decision_sheet": {
@@ -387,7 +436,11 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         "## Monitor Summary",
         "",
+        f"- Context: **{monitor.get('monitor_context')}**",
+        f"- Monitor artifact generated at UTC: `{monitor.get('monitor_artifact_generated_at_utc')}`",
+        f"- Operator console generated at UTC: `{monitor.get('operator_console_generated_at_utc')}`",
         f"- Cycles completed: **{monitor.get('cycles_completed')}**",
+        f"- Cycles requested: **{monitor.get('cycles_requested')}**",
         f"- Stopped reason: **{monitor.get('stopped_reason') or 'NONE'}**",
         f"- All ledger preserved: **{monitor.get('all_ledger_preserved')}**",
         f"- Any real bets enabled: **{monitor.get('any_real_bets_enabled')}**",

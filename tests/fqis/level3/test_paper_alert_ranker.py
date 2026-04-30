@@ -73,10 +73,16 @@ def test_paper_alert_ranker_compiles_runs_preserves_ledger_and_outputs_safe_rank
     assert payload["can_execute_real_bets"] is False
     assert payload["can_enable_live_staking"] is False
     assert payload["can_mutate_ledger"] is False
+    assert payload["live_staking_allowed"] is False
+    assert payload["promotion_allowed"] is False
 
     ranked = payload.get("ranked_alerts") or []
     assert payload["ranked_alert_count"] == len(ranked)
-    assert ranked
+    assert payload["raw_ranked_alert_count"] == len(payload.get("raw_ranked_alerts") or ranked)
+    assert payload["grouped_ranked_alert_count"] == len(payload.get("grouped_ranked_alerts") or [])
+    if not ranked:
+        assert payload["top_ranked_alert_count"] == 0
+        return
     assert [alert["rank"] for alert in ranked] == list(range(1, len(ranked) + 1))
 
     for alert in ranked:
@@ -85,6 +91,8 @@ def test_paper_alert_ranker_compiles_runs_preserves_ledger_and_outputs_safe_rank
         assert alert["can_execute_real_bets"] is False
         assert alert["can_enable_live_staking"] is False
         assert alert["can_mutate_ledger"] is False
+        assert alert["live_staking_allowed"] is False
+        assert alert["promotion_allowed"] is False
         assert "PAPER ONLY" in alert["operator_note"]
         assert "NO REAL BET" in alert["operator_note"]
         assert "NO STAKE" in alert["operator_note"]

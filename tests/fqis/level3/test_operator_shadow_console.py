@@ -50,6 +50,12 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     assert payload["paper_alert_ranker_status"] == "READY"
     assert payload["operator_paper_decision_sheet_status"] == "READY"
     assert "top_ranked_alert_count" in payload
+    assert "monitor_artifact_generated_at_utc" in payload
+    assert (payload.get("monitor") or {}).get("monitor_context") in {
+        "NO_MONITOR_CONTEXT",
+        "PARTIAL_MONITOR_CONTEXT",
+        "FINAL_MONITOR_CONTEXT",
+    }
     assert OUT_MD.exists()
 
 

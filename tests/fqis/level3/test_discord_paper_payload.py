@@ -47,16 +47,23 @@ def test_discord_paper_payload_compiles_runs_and_is_safe():
     assert "NO STAKE" in text
     assert "NO EXECUTION" in text
 
-    ranked = ranker.get("ranked_alerts") or []
-    new_ranked = [alert for alert in ranked if alert.get("dedupe_status") == "NEW"]
-    if new_ranked:
-        expected_keys = [alert.get("alert_key") for alert in new_ranked[:10]]
+    ranked = ranker.get("grouped_ranked_alerts") or ranker.get("ranked_alerts") or []
+    sendable_ranked = [
+        alert
+        for alert in ranked
+        if alert.get("alert_lifecycle_status") in {"NEW_CANONICAL", "UPDATED_CANONICAL"}
+        or alert.get("discord_sendable") is True
+    ]
+    if sendable_ranked:
+        expected_keys = [alert.get("alert_key") for alert in sendable_ranked[:10]]
         actual_keys = [alert.get("alert_key") for alert in payload.get("alert_records") or []]
         assert actual_keys == expected_keys
     elif ranker.get("repeated_ranked_alert_count"):
         assert payload["sendable"] is False
-        assert payload["send_reason"] == "NO_NEW_PAPER_ALERTS_RANKED_REPEATS_ONLY"
+        assert payload["send_reason"] == "NO_SENDABLE_CANONICAL_ALERTS_REPEATS_ONLY"
 
     assert payload["can_execute_real_bets"] is False
     assert payload["can_enable_live_staking"] is False
     assert payload["can_mutate_ledger"] is False
+    assert payload["live_staking_allowed"] is False
+    assert payload["promotion_allowed"] is False

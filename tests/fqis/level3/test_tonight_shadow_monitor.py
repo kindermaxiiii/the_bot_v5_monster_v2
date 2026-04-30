@@ -50,3 +50,5 @@ def test_tonight_shadow_monitor_one_cycle_is_paper_only_and_ledger_isolated():
         assert "ranked_alert_count" in row
         assert "top_ranked_alert_count" in row
         assert "new_paper_alerts" in row
+        assert "raw_new_paper_alerts" in row
+        assert "new_canonical_alerts" in row

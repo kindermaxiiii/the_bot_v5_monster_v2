@@ -52,6 +52,9 @@ def test_tonight_shadow_monitor_summary_and_digest_are_paper_only():
     assert summary["any_real_bets_enabled"] is False
     assert summary["any_live_staking_enabled"] is False
     assert "total_new_paper_alerts" in summary
+    assert "total_raw_new_paper_alerts" in summary
+    assert "total_canonical_new_alerts" in summary
+    assert "total_material_updates" in summary
     assert "total_repeated_paper_alerts" in summary
     assert "max_ranked_alert_count" in summary
     assert "unique_operator_states" in summary
@@ -66,5 +69,8 @@ def test_tonight_shadow_monitor_summary_and_digest_are_paper_only():
     }
     assert "final_operator_state" in digest
     assert "total_new_paper_alerts" in digest
+    assert "total_raw_new_paper_alerts" in digest
+    assert "total_canonical_new_alerts" in digest
+    assert "total_material_updates" in digest
     assert "final_ranked_alert_count" in digest
     assert digest["any_real_bets_enabled"] is False

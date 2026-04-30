@@ -50,3 +50,7 @@ def test_paper_alert_dedupe_runs_twice_persists_state_and_preserves_ledger():
     assert second["can_execute_real_bets"] is False
     assert second["can_enable_live_staking"] is False
     assert second["can_mutate_ledger"] is False
+    assert second["live_staking_allowed"] is False
+    assert second["promotion_allowed"] is False
+    assert "new_canonical_alerts" in second
+    assert "suppressed_exact_repeats" in second

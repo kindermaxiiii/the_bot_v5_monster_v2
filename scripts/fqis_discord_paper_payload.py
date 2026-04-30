@@ -22,6 +22,8 @@ SAFETY_BLOCK = {
     "can_execute_real_bets": False,
     "can_enable_live_staking": False,
     "can_mutate_ledger": False,
+    "live_staking_allowed": False,
+    "promotion_allowed": False,
 }
 
 
@@ -74,11 +76,11 @@ def build_alert_lines(records: list[dict[str, Any]], max_alerts: int = 10) -> li
                 minute=safe_text(record.get("minute")),
                 score=safe_text(record.get("score")),
                 selection=safe_text(record.get("selection")),
-                odds=safe_text(record.get("odds")),
-                edge=safe_text(record.get("edge_prob")),
-                ev=safe_text(record.get("ev_real")),
+                odds=safe_text(record.get("odds_latest", record.get("odds"))),
+                edge=safe_text(record.get("edge_latest", record.get("edge_prob"))),
+                ev=safe_text(record.get("ev_latest", record.get("ev_real"))),
                 paper_action=safe_text(record.get("paper_action")),
-                dedupe=safe_text(record.get("dedupe_status")),
+                dedupe=safe_text(record.get("alert_lifecycle_status") or record.get("dedupe_status")),
             )
         )
     return lines
@@ -134,24 +136,41 @@ def build_payload() -> dict[str, Any]:
     if unsafe_hits:
         reasons.append("UNSAFE_TRUE_FLAGS:" + ",".join(unsafe_hits[:20]))
 
-    ranked_records = ranker.get("ranked_alerts") or []
+    ranked_records = ranker.get("grouped_ranked_alerts") or ranker.get("ranked_alerts") or []
     if not isinstance(ranked_records, list):
         ranked_records = []
         reasons.append("RANKED_ALERTS_NOT_LIST")
     ranked_records = [record for record in ranked_records if isinstance(record, dict)]
-    new_ranked_records = [
+    sendable_canonical_records = [
         record
         for record in ranked_records
-        if record.get("is_new_alert") is True or record.get("dedupe_status") == "NEW"
+        if record.get("alert_lifecycle_status") in {"NEW_CANONICAL", "UPDATED_CANONICAL"}
+        or record.get("discord_sendable") is True
+    ]
+    new_ranked_records = [
+        record
+        for record in sendable_canonical_records
+        if record.get("alert_lifecycle_status") == "NEW_CANONICAL"
+        or record.get("is_new_alert") is True
+        or record.get("dedupe_status") == "NEW"
+    ]
+    updated_ranked_records = [
+        record
+        for record in sendable_canonical_records
+        if record.get("alert_lifecycle_status") == "UPDATED_CANONICAL"
+        or record.get("is_updated_alert") is True
+        or record.get("dedupe_status") == "UPDATED"
     ]
     repeated_ranked_records = [
         record
         for record in ranked_records
-        if record.get("is_repeated_alert") is True or record.get("dedupe_status") == "REPEATED"
+        if record.get("alert_lifecycle_status") == "REPEATED_CANONICAL"
+        or record.get("is_repeated_alert") is True
+        or record.get("dedupe_status") == "REPEATED"
     ]
 
-    if new_ranked_records:
-        included_records = new_ranked_records[:10]
+    if sendable_canonical_records:
+        included_records = sendable_canonical_records[:10]
     elif repeated_ranked_records:
         included_records = repeated_ranked_records[:10]
     else:
@@ -164,9 +183,13 @@ def build_payload() -> dict[str, Any]:
         "freshness_status": freshness.get("status"),
         "paper_alert_ranker_status": ranker.get("status"),
         "ranked_alert_count": ranker.get("ranked_alert_count") or 0,
+        "grouped_ranked_alert_count": ranker.get("grouped_ranked_alert_count") or 0,
+        "raw_ranked_alert_count": ranker.get("raw_ranked_alert_count") or ranker.get("ranked_alert_count") or 0,
         "top_ranked_alert_count": ranker.get("top_ranked_alert_count") or 0,
         "new_ranked_alert_count": len(new_ranked_records),
+        "updated_ranked_alert_count": len(updated_ranked_records),
         "repeated_ranked_alert_count": len(repeated_ranked_records),
+        "sendable_canonical_alert_count": len(sendable_canonical_records),
         "decisions_total": freshness.get("decisions_total") or export.get("total_decisions"),
         "candidates_this_cycle": freshness.get("candidates_this_cycle"),
         "new_snapshots_appended": freshness.get("new_snapshots_appended"),
@@ -176,15 +199,17 @@ def build_payload() -> dict[str, Any]:
     }
 
     status = "BLOCKED" if reasons else "READY"
-    sendable = status == "READY" and bool(new_ranked_records)
+    sendable = status == "READY" and bool(sendable_canonical_records)
     if status == "BLOCKED":
         send_reason = "BLOCKED_BY_SAFETY_OR_INPUTS"
-    elif not new_ranked_records and repeated_ranked_records:
-        send_reason = "NO_NEW_PAPER_ALERTS_RANKED_REPEATS_ONLY"
+    elif not sendable_canonical_records and repeated_ranked_records:
+        send_reason = "NO_SENDABLE_CANONICAL_ALERTS_REPEATS_ONLY"
     elif not alert_lines:
-        send_reason = "NO_NEW_PAPER_ALERTS"
+        send_reason = "NO_SENDABLE_CANONICAL_ALERTS"
+    elif updated_ranked_records and not new_ranked_records:
+        send_reason = "MATERIAL_CANONICAL_UPDATES_READY"
     else:
-        send_reason = "NEW_RANKED_PAPER_ALERTS_READY"
+        send_reason = "NEW_CANONICAL_PAPER_ALERTS_READY"
 
     body_lines = [
         "PAPER ONLY | NO REAL BET | NO STAKE | NO EXECUTION",
@@ -192,12 +217,12 @@ def build_payload() -> dict[str, Any]:
         f"Decisions: {dashboard.get('decisions_total')} | Candidates: {dashboard.get('candidates_this_cycle')} | New snapshots: {dashboard.get('new_snapshots_appended')}",
         f"Post-quarantine PnL/ROI: {dashboard.get('post_quarantine_pnl')} / {dashboard.get('post_quarantine_roi')}",
     ]
-    if new_ranked_records and alert_lines:
+    if sendable_canonical_records and alert_lines:
         body_lines += ["", *alert_lines]
     elif repeated_ranked_records and alert_lines:
-        body_lines += ["", "No new paper alerts. High-ranked repeated paper alerts for operator review only:", *alert_lines]
+        body_lines += ["", "No sendable canonical paper alerts. High-ranked repeated paper alerts for operator review only:", *alert_lines]
     else:
-        body_lines += ["", "No new paper alerts."]
+        body_lines += ["", "No sendable canonical paper alerts."]
 
     body = "\n".join(body_lines)
     return {
@@ -208,6 +233,7 @@ def build_payload() -> dict[str, Any]:
         "sendable": sendable,
         "send_reason": send_reason,
         "paper_only": True,
+        "discord_sendable_canonical_only": True,
         "discord_send_performed": False,
         "dashboard": dashboard,
         "alerts_included": len(alert_lines),
@@ -215,7 +241,9 @@ def build_payload() -> dict[str, Any]:
         "alert_records": included_records,
         "ranked_alert_records": ranked_records[:10],
         "new_ranked_alert_count": len(new_ranked_records),
+        "updated_ranked_alert_count": len(updated_ranked_records),
         "repeated_ranked_alert_count": len(repeated_ranked_records),
+        "sendable_canonical_alert_count": len(sendable_canonical_records),
         "content": body,
         "safety": dict(SAFETY_BLOCK),
         **SAFETY_BLOCK,
@@ -238,7 +266,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
     if payload.get("reasons"):
         lines += ["", "## Block Reasons", ""]
         lines.extend(f"- {safe_text(reason)}" for reason in payload.get("reasons") or [])
-    if payload.get("send_reason") == "NO_NEW_PAPER_ALERTS_RANKED_REPEATS_ONLY":
+    if payload.get("send_reason") == "NO_SENDABLE_CANONICAL_ALERTS_REPEATS_ONLY":
         lines += [
             "",
             "## Ranked Repeated Paper Alerts Summary",
@@ -252,9 +280,9 @@ def write_markdown(payload: dict[str, Any]) -> None:
                     rank=safe_text(record.get("rank")),
                     match=safe_text(record.get("match") or record.get("fixture_id")),
                     selection=safe_text(record.get("selection")),
-                    odds=safe_text(record.get("odds")),
-                    edge=safe_text(record.get("edge_prob")),
-                    ev=safe_text(record.get("ev_real")),
+                    odds=safe_text(record.get("odds_latest", record.get("odds"))),
+                    edge=safe_text(record.get("edge_latest", record.get("edge_prob"))),
+                    ev=safe_text(record.get("ev_latest", record.get("ev_real"))),
                 )
             )
 
