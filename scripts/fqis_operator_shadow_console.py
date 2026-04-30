@@ -13,6 +13,7 @@ FULL_CYCLE_JSON = ORCH_DIR / "latest_full_cycle_report.json"
 GO_NO_GO_JSON = ORCH_DIR / "latest_go_no_go_report.json"
 SHADOW_READINESS_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
+LIVE_OPPORTUNITY_SCANNER_JSON = ORCH_DIR / "latest_live_opportunity_scanner.json"
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
 PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
@@ -27,6 +28,34 @@ HISTORICAL_STATIC_REVIEW_FLAGS = {
     "CONSTANT_POST_QUARANTINE_PNL_REVIEW",
     "CONSTANT_FIXTURE_PNL_REVIEW",
 }
+
+LIVE_OPPORTUNITY_SCANNER_FIELDS = (
+    "status",
+    "generated_at_utc",
+    "operator_read",
+    "live_fixtures_seen",
+    "groups_total",
+    "groups_priced",
+    "decisions_total",
+    "candidates_this_cycle",
+    "new_snapshots_appended",
+    "level3_state_ready_count",
+    "level3_trade_ready_count",
+    "level3_events_available_count",
+    "level3_stats_available_count",
+    "score_only_decisions",
+    "rejected_by_non_positive_edge_ev",
+    "rejected_by_timing_policy",
+    "rejected_by_data_tier",
+    "rejected_by_final_status",
+    "rejected_by_negative_value_veto",
+    "can_execute_real_bets",
+    "can_enable_live_staking",
+    "can_mutate_ledger",
+    "live_staking_allowed",
+    "promotion_allowed",
+    "read",
+)
 
 
 def utc_now() -> str:
@@ -145,6 +174,18 @@ def freshness_review_state(freshness: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def live_opportunity_scanner_section(scanner: dict[str, Any]) -> dict[str, Any]:
+    section = {field: scanner.get(field) for field in LIVE_OPPORTUNITY_SCANNER_FIELDS}
+    section["top_rejection_reasons"] = list(scanner.get("top_rejection_reasons") or [])[:3]
+    if scanner.get("missing"):
+        section["missing"] = True
+        section["path"] = scanner.get("path")
+    if scanner.get("error"):
+        section["error"] = scanner.get("error")
+        section["path"] = scanner.get("path")
+    return section
+
+
 def build_payload() -> dict[str, Any]:
     generated_at_utc = utc_now()
     full_cycle = read_json(FULL_CYCLE_JSON)
@@ -152,6 +193,7 @@ def build_payload() -> dict[str, Any]:
     go_no_go = read_json(GO_NO_GO_JSON)
     shadow = read_json(SHADOW_READINESS_JSON)
     freshness = read_json(LIVE_FRESHNESS_JSON)
+    live_opportunity_scanner = read_json(LIVE_OPPORTUNITY_SCANNER_JSON)
     paper_export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
     ranker = read_json(PAPER_ALERT_RANKER_JSON)
@@ -164,11 +206,18 @@ def build_payload() -> dict[str, Any]:
     invariants = full_cycle.get("invariants") or {}
 
     safety = {
-        "promotion_allowed": safe_bool(go_no_go.get("promotion_allowed"), daily_verdict.get("promotion_allowed")),
+        "promotion_allowed": safe_bool(
+            go_no_go.get("promotion_allowed"),
+            daily_verdict.get("promotion_allowed"),
+            live_opportunity_scanner.get("promotion_allowed"),
+            (live_opportunity_scanner.get("safety") or {}).get("promotion_allowed"),
+        ),
         "live_staking_allowed": safe_bool(
             go_no_go.get("live_staking_allowed"),
             invariants.get("live_staking_enabled"),
             (paper_export.get("safety") or {}).get("live_staking_allowed"),
+            live_opportunity_scanner.get("live_staking_allowed"),
+            (live_opportunity_scanner.get("safety") or {}).get("live_staking_allowed"),
         ),
         "can_execute_real_bets": safe_bool(
             shadow.get("can_execute_real_bets"),
@@ -176,6 +225,8 @@ def build_payload() -> dict[str, Any]:
             ranker.get("can_execute_real_bets"),
             decision_sheet.get("can_execute_real_bets"),
             discord_payload.get("can_execute_real_bets"),
+            live_opportunity_scanner.get("can_execute_real_bets"),
+            (live_opportunity_scanner.get("safety") or {}).get("can_execute_real_bets"),
         ),
         "can_enable_live_staking": safe_bool(
             shadow.get("can_enable_live_staking"),
@@ -183,6 +234,8 @@ def build_payload() -> dict[str, Any]:
             ranker.get("can_enable_live_staking"),
             decision_sheet.get("can_enable_live_staking"),
             discord_payload.get("can_enable_live_staking"),
+            live_opportunity_scanner.get("can_enable_live_staking"),
+            (live_opportunity_scanner.get("safety") or {}).get("can_enable_live_staking"),
         ),
         "can_mutate_ledger": safe_bool(
             shadow.get("can_mutate_ledger"),
@@ -191,6 +244,8 @@ def build_payload() -> dict[str, Any]:
             ranker.get("can_mutate_ledger"),
             decision_sheet.get("can_mutate_ledger"),
             discord_payload.get("can_mutate_ledger"),
+            live_opportunity_scanner.get("can_mutate_ledger"),
+            (live_opportunity_scanner.get("safety") or {}).get("can_mutate_ledger"),
         ),
     }
 
@@ -205,6 +260,10 @@ def build_payload() -> dict[str, Any]:
         "operator_paper_decision_sheet": decision_sheet,
         "discord_paper_payload": discord_payload,
     }
+    safety_inputs = {
+        **inputs,
+        "live_opportunity_scanner": live_opportunity_scanner,
+    }
     unsafe_names = {
         "live_staking_allowed",
         "level3_live_staking_allowed",
@@ -214,7 +273,7 @@ def build_payload() -> dict[str, Any]:
         "promotion_allowed",
     }
     unsafe_hits: list[str] = []
-    for name, payload in inputs.items():
+    for name, payload in safety_inputs.items():
         unsafe_hits.extend(f"{name}:{hit}" for hit in find_true_flags(payload, unsafe_names))
 
     reasons: list[str] = []
@@ -347,6 +406,7 @@ def build_payload() -> dict[str, Any]:
         "full_cycle_status": full_cycle.get("status"),
         "paper_counts": paper_counts,
         "freshness": freshness_section,
+        "live_opportunity_scanner": live_opportunity_scanner_section(live_opportunity_scanner),
         "paper_alert_ranker": {
             "status": ranker.get("status"),
             "ranked_alert_count": ranked_alert_count,
@@ -383,6 +443,7 @@ def safe_text(value: Any) -> str:
 def write_markdown(payload: dict[str, Any]) -> None:
     safety = payload.get("safety") or {}
     freshness = payload.get("freshness") or {}
+    live_opportunity_scanner = payload.get("live_opportunity_scanner") or {}
     paper_counts = payload.get("paper_counts") or {}
     discord = payload.get("discord") or {}
     monitor = payload.get("monitor") or {}
@@ -415,6 +476,26 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Decisions total: **{freshness.get('decisions_total')}**",
         f"- Candidates this cycle: **{freshness.get('candidates_this_cycle')}**",
         f"- New snapshots appended: **{freshness.get('new_snapshots_appended')}**",
+        "",
+        "## Live Opportunity Scanner",
+        "",
+        f"- status: **{live_opportunity_scanner.get('status')}**",
+        f"- operator_read: **{live_opportunity_scanner.get('operator_read')}**",
+        f"- live_fixtures_seen: **{live_opportunity_scanner.get('live_fixtures_seen')}**",
+        f"- groups_total / groups_priced: **{live_opportunity_scanner.get('groups_total')} / {live_opportunity_scanner.get('groups_priced')}**",
+        f"- decisions_total: **{live_opportunity_scanner.get('decisions_total')}**",
+        f"- candidates_this_cycle: **{live_opportunity_scanner.get('candidates_this_cycle')}**",
+        f"- new_snapshots_appended: **{live_opportunity_scanner.get('new_snapshots_appended')}**",
+        f"- level3_state_ready_count / level3_trade_ready_count: **{live_opportunity_scanner.get('level3_state_ready_count')} / {live_opportunity_scanner.get('level3_trade_ready_count')}**",
+        f"- level3_events_available_count / level3_stats_available_count: **{live_opportunity_scanner.get('level3_events_available_count')} / {live_opportunity_scanner.get('level3_stats_available_count')}**",
+        f"- score_only_decisions: **{live_opportunity_scanner.get('score_only_decisions')}**",
+        f"- rejected_by_non_positive_edge_ev: **{live_opportunity_scanner.get('rejected_by_non_positive_edge_ev')}**",
+        f"- rejected_by_timing_policy: **{live_opportunity_scanner.get('rejected_by_timing_policy')}**",
+        f"- rejected_by_data_tier: **{live_opportunity_scanner.get('rejected_by_data_tier')}**",
+        f"- rejected_by_final_status: **{live_opportunity_scanner.get('rejected_by_final_status')}**",
+        f"- rejected_by_negative_value_veto: **{live_opportunity_scanner.get('rejected_by_negative_value_veto')}**",
+        "",
+        "### Top 3 Rejection Reasons",
         "",
         "## Paper Signals",
         "",
@@ -461,6 +542,14 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "## Reasons",
         "",
     ]
+    top_rejection_reasons = live_opportunity_scanner.get("top_rejection_reasons") or []
+    if top_rejection_reasons:
+        insert_at = lines.index("## Paper Signals") - 1
+        for item in reversed(top_rejection_reasons[:3]):
+            lines.insert(insert_at, f"- {item.get('count', 0)}: {safe_text(item.get('reason'))}")
+    else:
+        insert_at = lines.index("## Paper Signals") - 1
+        lines.insert(insert_at, "- NONE")
     for reason in payload.get("reasons") or []:
         lines.append(f"- {safe_text(reason)}")
 
