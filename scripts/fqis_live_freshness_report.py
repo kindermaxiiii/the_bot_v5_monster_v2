@@ -173,6 +173,7 @@ def build_payload() -> dict[str, Any]:
     new_snapshots_appended = int_value(research_summary.get("new_snapshots_appended"))
 
     flags: list[str] = []
+    historical_metric_static_review: list[str] = []
     if live_decisions.get("missing") or live_decisions.get("error"):
         flags.append("MISSING_LIVE_DECISIONS")
     if research_candidates.get("missing") or research_candidates.get("error"):
@@ -194,9 +195,9 @@ def build_payload() -> dict[str, Any]:
     if old_ledger_flag(generated_at_utc, ledger_mtime):
         flags.append("LEDGER_MTIME_OLD_REVIEW")
     if len(rows) > 1 and len(monitor_info["unique_post_quarantine_pnl_in_monitor"]) == 1:
-        flags.append("CONSTANT_POST_QUARANTINE_PNL_REVIEW")
+        historical_metric_static_review.append("CONSTANT_POST_QUARANTINE_PNL_REVIEW")
     if len(rows) > 1 and len(monitor_info["unique_fixture_pnl_in_monitor"]) == 1:
-        flags.append("CONSTANT_FIXTURE_PNL_REVIEW")
+        historical_metric_static_review.append("CONSTANT_FIXTURE_PNL_REVIEW")
 
     status = "MISSING_INPUTS" if missing_inputs else ("STALE_REVIEW" if flags else "READY")
     if not flags and status == "READY":
@@ -222,11 +223,19 @@ def build_payload() -> dict[str, Any]:
         "unique_candidates_this_cycle_in_monitor": monitor_info["unique_candidates_this_cycle_in_monitor"] if monitor else [],
         "unique_new_snapshots_appended_in_monitor": monitor_info["unique_new_snapshots_appended_in_monitor"] if monitor else [],
         "freshness_flags": flags,
+        "live_freshness_flags": flags,
+        "historical_metric_static_review": historical_metric_static_review,
+        "economic_static_review": historical_metric_static_review,
+        "all_review_flags": [*flags, *historical_metric_static_review],
         "missing_inputs": missing_inputs,
         "read": {
             "safety_readiness": "UNCHANGED_BY_FRESHNESS_REPORT",
             "data_freshness": status,
-            "economic_performance": "REVIEW_ONLY_CONSTANT_PNL_IS_NOT_FATAL",
+            "economic_performance": (
+                "HISTORICAL_STATIC_REVIEW_ONLY_NOT_LIVE_FRESHNESS"
+                if historical_metric_static_review
+                else "NO_HISTORICAL_STATIC_REVIEW"
+            ),
         },
     }
     return payload
@@ -258,6 +267,8 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "unique_candidates_this_cycle_in_monitor",
         "unique_new_snapshots_appended_in_monitor",
         "freshness_flags",
+        "historical_metric_static_review",
+        "all_review_flags",
     ]
 
     read = payload.get("read") or {}

@@ -37,6 +37,8 @@ def test_live_freshness_report_compiles_runs_and_preserves_ledger():
     payload = json.loads(FRESHNESS_JSON.read_text(encoding="utf-8"))
     assert payload["status"] in {"READY", "STALE_REVIEW", "MISSING_INPUTS"}
     assert isinstance(payload["freshness_flags"], list)
+    assert "CONSTANT_POST_QUARANTINE_PNL_REVIEW" not in payload["freshness_flags"]
+    assert isinstance(payload.get("historical_metric_static_review"), list)
     assert FRESHNESS_MD.exists()
 
 

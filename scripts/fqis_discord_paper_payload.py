@@ -11,6 +11,7 @@ ORCH_DIR = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator"
 
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
+PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
 GO_NO_GO_JSON = ORCH_DIR / "latest_go_no_go_report.json"
 SHADOW_READINESS_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
@@ -67,8 +68,8 @@ def build_alert_lines(records: list[dict[str, Any]], max_alerts: int = 10) -> li
     lines: list[str] = []
     for index, record in enumerate(records[:max_alerts], start=1):
         lines.append(
-            "{index}. {match} {minute}' {score} | {selection} @ {odds} | edge {edge} | EV {ev} | {paper_action}".format(
-                index=index,
+            "#{rank} {match} {minute}' {score} | {selection} @ {odds} | edge {edge} | EV {ev} | {paper_action} | {dedupe}".format(
+                rank=safe_text(record.get("rank") or index),
                 match=safe_text(record.get("match") or record.get("fixture_id")),
                 minute=safe_text(record.get("minute")),
                 score=safe_text(record.get("score")),
@@ -77,6 +78,7 @@ def build_alert_lines(records: list[dict[str, Any]], max_alerts: int = 10) -> li
                 edge=safe_text(record.get("edge_prob")),
                 ev=safe_text(record.get("ev_real")),
                 paper_action=safe_text(record.get("paper_action")),
+                dedupe=safe_text(record.get("dedupe_status")),
             )
         )
     return lines
@@ -86,6 +88,7 @@ def build_payload() -> dict[str, Any]:
     generated_at_utc = utc_now()
     export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
+    ranker = read_json(PAPER_ALERT_RANKER_JSON)
     go_no_go = read_json(GO_NO_GO_JSON)
     shadow = read_json(SHADOW_READINESS_JSON)
     freshness = read_json(LIVE_FRESHNESS_JSON)
@@ -93,6 +96,7 @@ def build_payload() -> dict[str, Any]:
     inputs = {
         "paper_signal_export": export,
         "paper_alert_dedupe": dedupe,
+        "paper_alert_ranker": ranker,
         "go_no_go": go_no_go,
         "shadow_readiness": shadow,
         "live_freshness": freshness,
@@ -107,6 +111,8 @@ def build_payload() -> dict[str, Any]:
         reasons.append("PAPER_SIGNAL_EXPORT_BLOCKED")
     if dedupe.get("status") == "BLOCKED":
         reasons.append("PAPER_ALERT_DEDUPE_BLOCKED")
+    if ranker.get("status") == "BLOCKED":
+        reasons.append("PAPER_ALERT_RANKER_BLOCKED")
     if go_no_go.get("status") != "READY":
         reasons.append("GO_NO_GO_NOT_READY")
     if shadow.get("status") != "READY" or shadow.get("shadow_state") != "SHADOW_READY":
@@ -128,15 +134,39 @@ def build_payload() -> dict[str, Any]:
     if unsafe_hits:
         reasons.append("UNSAFE_TRUE_FLAGS:" + ",".join(unsafe_hits[:20]))
 
-    new_records = dedupe.get("new_alert_records") or []
-    if not isinstance(new_records, list):
-        new_records = []
+    ranked_records = ranker.get("ranked_alerts") or []
+    if not isinstance(ranked_records, list):
+        ranked_records = []
+        reasons.append("RANKED_ALERTS_NOT_LIST")
+    ranked_records = [record for record in ranked_records if isinstance(record, dict)]
+    new_ranked_records = [
+        record
+        for record in ranked_records
+        if record.get("is_new_alert") is True or record.get("dedupe_status") == "NEW"
+    ]
+    repeated_ranked_records = [
+        record
+        for record in ranked_records
+        if record.get("is_repeated_alert") is True or record.get("dedupe_status") == "REPEATED"
+    ]
 
-    alert_lines = build_alert_lines([r for r in new_records if isinstance(r, dict)])
+    if new_ranked_records:
+        included_records = new_ranked_records[:10]
+    elif repeated_ranked_records:
+        included_records = repeated_ranked_records[:10]
+    else:
+        included_records = []
+
+    alert_lines = build_alert_lines(included_records)
     dashboard = {
         "go_no_go_state": go_no_go.get("go_no_go_state"),
         "shadow_state": shadow.get("shadow_state"),
         "freshness_status": freshness.get("status"),
+        "paper_alert_ranker_status": ranker.get("status"),
+        "ranked_alert_count": ranker.get("ranked_alert_count") or 0,
+        "top_ranked_alert_count": ranker.get("top_ranked_alert_count") or 0,
+        "new_ranked_alert_count": len(new_ranked_records),
+        "repeated_ranked_alert_count": len(repeated_ranked_records),
         "decisions_total": freshness.get("decisions_total") or export.get("total_decisions"),
         "candidates_this_cycle": freshness.get("candidates_this_cycle"),
         "new_snapshots_appended": freshness.get("new_snapshots_appended"),
@@ -146,13 +176,15 @@ def build_payload() -> dict[str, Any]:
     }
 
     status = "BLOCKED" if reasons else "READY"
-    sendable = status == "READY" and bool(alert_lines)
+    sendable = status == "READY" and bool(new_ranked_records)
     if status == "BLOCKED":
         send_reason = "BLOCKED_BY_SAFETY_OR_INPUTS"
+    elif not new_ranked_records and repeated_ranked_records:
+        send_reason = "NO_NEW_PAPER_ALERTS_RANKED_REPEATS_ONLY"
     elif not alert_lines:
         send_reason = "NO_NEW_PAPER_ALERTS"
     else:
-        send_reason = "NEW_PAPER_ALERTS_READY"
+        send_reason = "NEW_RANKED_PAPER_ALERTS_READY"
 
     body_lines = [
         "PAPER ONLY | NO REAL BET | NO STAKE | NO EXECUTION",
@@ -160,8 +192,10 @@ def build_payload() -> dict[str, Any]:
         f"Decisions: {dashboard.get('decisions_total')} | Candidates: {dashboard.get('candidates_this_cycle')} | New snapshots: {dashboard.get('new_snapshots_appended')}",
         f"Post-quarantine PnL/ROI: {dashboard.get('post_quarantine_pnl')} / {dashboard.get('post_quarantine_roi')}",
     ]
-    if alert_lines:
+    if new_ranked_records and alert_lines:
         body_lines += ["", *alert_lines]
+    elif repeated_ranked_records and alert_lines:
+        body_lines += ["", "No new paper alerts. High-ranked repeated paper alerts for operator review only:", *alert_lines]
     else:
         body_lines += ["", "No new paper alerts."]
 
@@ -178,7 +212,10 @@ def build_payload() -> dict[str, Any]:
         "dashboard": dashboard,
         "alerts_included": len(alert_lines),
         "alerts_cap": 10,
-        "alert_records": new_records[:10],
+        "alert_records": included_records,
+        "ranked_alert_records": ranked_records[:10],
+        "new_ranked_alert_count": len(new_ranked_records),
+        "repeated_ranked_alert_count": len(repeated_ranked_records),
         "content": body,
         "safety": dict(SAFETY_BLOCK),
         **SAFETY_BLOCK,
@@ -201,6 +238,25 @@ def write_markdown(payload: dict[str, Any]) -> None:
     if payload.get("reasons"):
         lines += ["", "## Block Reasons", ""]
         lines.extend(f"- {safe_text(reason)}" for reason in payload.get("reasons") or [])
+    if payload.get("send_reason") == "NO_NEW_PAPER_ALERTS_RANKED_REPEATS_ONLY":
+        lines += [
+            "",
+            "## Ranked Repeated Paper Alerts Summary",
+            "",
+            "PAPER ONLY / NO REAL BET / NO STAKE / NO EXECUTION",
+            "",
+        ]
+        for record in payload.get("alert_records") or []:
+            lines.append(
+                "- #{rank} {match} | {selection} @ {odds} | edge {edge} | EV {ev}".format(
+                    rank=safe_text(record.get("rank")),
+                    match=safe_text(record.get("match") or record.get("fixture_id")),
+                    selection=safe_text(record.get("selection")),
+                    odds=safe_text(record.get("odds")),
+                    edge=safe_text(record.get("edge_prob")),
+                    ev=safe_text(record.get("ev_real")),
+                )
+            )
 
     OUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUT_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -37,8 +37,10 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
     for label in [
         "19_paper_signal_export",
         "20_paper_alert_dedupe",
-        "21_discord_paper_payload",
-        "22_operator_shadow_console",
+        "21_paper_alert_ranker",
+        "22_operator_paper_decision_sheet",
+        "23_discord_paper_payload",
+        "24_operator_shadow_console",
     ]:
         assert labels.count(label) == 1
 
@@ -47,6 +49,8 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "## Live Freshness",
         "## Paper Signal Export",
         "## Paper Alert Dedupe",
+        "## Paper Alert Ranker",
+        "## Operator Paper Decision Sheet",
         "## Discord Paper Payload",
         "## Operator Shadow Console",
     ]:
@@ -56,10 +60,18 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
     for name in [
         "paper_signal_export",
         "paper_alert_dedupe",
+        "paper_alert_ranker",
+        "operator_paper_decision_sheet",
         "discord_paper_payload",
         "operator_shadow_console",
     ]:
         assert name in reports
+    assert reports["paper_alert_ranker"]["can_execute_real_bets"] is False
+    assert reports["paper_alert_ranker"]["can_enable_live_staking"] is False
+    assert reports["paper_alert_ranker"]["can_mutate_ledger"] is False
+    assert reports["operator_paper_decision_sheet"]["can_execute_real_bets"] is False
+    assert reports["operator_paper_decision_sheet"]["can_enable_live_staking"] is False
+    assert reports["operator_paper_decision_sheet"]["can_mutate_ledger"] is False
     assert reports["operator_shadow_console"]["operator_state"] in {
         "PAPER_READY",
         "PAPER_REVIEW",

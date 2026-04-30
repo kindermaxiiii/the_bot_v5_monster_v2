@@ -18,6 +18,8 @@ SHADOW_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
+PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
+OPERATOR_PAPER_DECISION_SHEET_JSON = ORCH_DIR / "latest_operator_paper_decision_sheet.json"
 DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 OPERATOR_CONSOLE_JSON = ORCH_DIR / "latest_operator_shadow_console.json"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
@@ -145,6 +147,8 @@ def build_cycle_row(cycle_number: int, run_result: dict[str, Any]) -> dict[str, 
     live_freshness = read_json(LIVE_FRESHNESS_JSON)
     paper_signal_export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     paper_alert_dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
+    paper_alert_ranker = read_json(PAPER_ALERT_RANKER_JSON)
+    decision_sheet = read_json(OPERATOR_PAPER_DECISION_SHEET_JSON)
     discord_payload = read_json(DISCORD_PAPER_PAYLOAD_JSON)
     operator_console = read_json(OPERATOR_CONSOLE_JSON)
 
@@ -182,9 +186,13 @@ def build_cycle_row(cycle_number: int, run_result: dict[str, Any]) -> dict[str, 
         "freshness_flags": live_freshness.get("freshness_flags") or [],
         "paper_signal_export_status": paper_signal_export.get("status"),
         "paper_alert_dedupe_status": paper_alert_dedupe.get("status"),
+        "paper_alert_ranker_status": paper_alert_ranker.get("status"),
+        "operator_paper_decision_sheet_status": decision_sheet.get("status"),
         "discord_paper_payload_status": discord_payload.get("status"),
         "paper_signals_total": paper_signal_export.get("paper_signals_total")
         or paper_signal_export.get("total_decisions"),
+        "ranked_alert_count": paper_alert_ranker.get("ranked_alert_count"),
+        "top_ranked_alert_count": paper_alert_ranker.get("top_ranked_alert_count"),
         "new_paper_alerts": paper_alert_dedupe.get("new_alerts"),
         "repeated_paper_alerts": paper_alert_dedupe.get("repeated_alerts"),
         "sendable_discord_payload": discord_payload.get("sendable") is True,
@@ -204,6 +212,8 @@ def stop_reason(row: dict[str, Any]) -> str:
         ("OPERATOR_STATE_BLOCKED", row.get("operator_state") == "PAPER_BLOCKED"),
         ("PAPER_SIGNAL_EXPORT_BLOCKED", row.get("paper_signal_export_status") == "BLOCKED"),
         ("PAPER_ALERT_DEDUPE_BLOCKED", row.get("paper_alert_dedupe_status") == "BLOCKED"),
+        ("PAPER_ALERT_RANKER_BLOCKED", row.get("paper_alert_ranker_status") == "BLOCKED"),
+        ("OPERATOR_PAPER_DECISION_SHEET_BLOCKED", row.get("operator_paper_decision_sheet_status") == "BLOCKED"),
         ("DISCORD_PAYLOAD_UNSAFE", row.get("discord_paper_payload_status") == "BLOCKED"),
         ("PROMOTION_ALLOWED_TRUE", row.get("promotion_allowed") is True),
         ("LIVE_STAKING_ALLOWED_TRUE", row.get("live_staking_allowed") is True),
@@ -247,6 +257,7 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     roi_values = numeric_values(rows, "post_quarantine_roi")
     candidate_values = numeric_values(rows, "candidates_this_cycle")
     paper_signal_values = numeric_values(rows, "paper_signals_total")
+    ranked_alert_values = numeric_values(rows, "ranked_alert_count")
 
     return {
         "first_timestamp": first_timestamp,
@@ -264,6 +275,8 @@ def build_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "max_post_quarantine_roi": max(roi_values) if roi_values else None,
         "min_paper_signals_total": min(paper_signal_values) if paper_signal_values else None,
         "max_paper_signals_total": max(paper_signal_values) if paper_signal_values else None,
+        "min_ranked_alert_count": min(ranked_alert_values) if ranked_alert_values else None,
+        "max_ranked_alert_count": max(ranked_alert_values) if ranked_alert_values else None,
         "total_new_paper_alerts": sum(int(row.get("new_paper_alerts") or 0) for row in rows),
         "total_repeated_paper_alerts": sum(int(row.get("repeated_paper_alerts") or 0) for row in rows),
         "any_sendable_discord_payload": any(row.get("sendable_discord_payload") is True for row in rows),
@@ -335,6 +348,8 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "max_post_quarantine_roi",
         "min_paper_signals_total",
         "max_paper_signals_total",
+        "min_ranked_alert_count",
+        "max_ranked_alert_count",
         "total_new_paper_alerts",
         "total_repeated_paper_alerts",
         "any_sendable_discord_payload",
@@ -368,13 +383,13 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         "## Cycles",
         "",
-        "| Cycle | Timestamp | Full cycle | Go/No-Go | Shadow | Operator | Freshness | Decisions | Candidates | New snapshots | Paper signals | New alerts | Repeats | Discord sendable | Promotion | Live staking | Real bets | Enable staking | Ledger | PnL | ROI | Duration sec |",
-        "|---:|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---|---:|---:|---:|",
+        "| Cycle | Timestamp | Full cycle | Go/No-Go | Shadow | Operator | Freshness | Decisions | Candidates | New snapshots | Paper signals | Ranked alerts | New alerts | Repeats | Discord sendable | Promotion | Live staking | Real bets | Enable staking | Ledger | PnL | ROI | Duration sec |",
+        "|---:|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---|---|---|---|---:|---:|---:|",
     ]
 
     for row in payload["rows"]:
         lines.append(
-            "| {cycle} | {timestamp} | {full_cycle_status} | {go_no_go_state} | {shadow_state} | {operator_state} | {live_freshness_status} | {decisions_total} | {candidates_this_cycle} | {new_snapshots_appended} | {paper_signals_total} | {new_paper_alerts} | {repeated_paper_alerts} | {sendable_discord_payload} | {promotion_allowed} | {live_staking_allowed} | {can_execute_real_bets} | {can_enable_live_staking} | {ledger_preserved} | {post_quarantine_pnl} | {post_quarantine_roi} | {full_cycle_duration_sec} |".format(
+            "| {cycle} | {timestamp} | {full_cycle_status} | {go_no_go_state} | {shadow_state} | {operator_state} | {live_freshness_status} | {decisions_total} | {candidates_this_cycle} | {new_snapshots_appended} | {paper_signals_total} | {ranked_alert_count} | {new_paper_alerts} | {repeated_paper_alerts} | {sendable_discord_payload} | {promotion_allowed} | {live_staking_allowed} | {can_execute_real_bets} | {can_enable_live_staking} | {ledger_preserved} | {post_quarantine_pnl} | {post_quarantine_roi} | {full_cycle_duration_sec} |".format(
                 **row
             )
         )

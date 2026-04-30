@@ -47,4 +47,6 @@ def test_tonight_shadow_monitor_one_cycle_is_paper_only_and_ledger_isolated():
         assert row["promotion_allowed"] is False
         assert row["operator_state"] in {"PAPER_READY", "PAPER_REVIEW", "PAPER_BLOCKED"}
         assert "paper_signals_total" in row
+        assert "ranked_alert_count" in row
+        assert "top_ranked_alert_count" in row
         assert "new_paper_alerts" in row

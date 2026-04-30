@@ -14,10 +14,15 @@ SHADOW_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 OPERATOR_CONSOLE_JSON = ORCH_DIR / "latest_operator_shadow_console.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
+PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
 DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 OUT_JSON = ORCH_DIR / "latest_tonight_shadow_digest.json"
 OUT_MD = ORCH_DIR / "latest_tonight_shadow_digest.md"
 FULL_CYCLE_MD = ORCH_DIR / "latest_full_cycle_report.md"
+HISTORICAL_STATIC_REVIEW_FLAGS = {
+    "CONSTANT_POST_QUARANTINE_PNL_REVIEW",
+    "CONSTANT_FIXTURE_PNL_REVIEW",
+}
 
 
 def utc_now() -> str:
@@ -98,6 +103,7 @@ def build_digest() -> dict[str, Any]:
     live_freshness_report = read_json(LIVE_FRESHNESS_JSON)
     operator_console = read_json(OPERATOR_CONSOLE_JSON)
     paper_dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
+    paper_ranker = read_json(PAPER_ALERT_RANKER_JSON)
     discord_payload = read_json(DISCORD_PAPER_PAYLOAD_JSON)
 
     rows = monitor.get("rows") or []
@@ -177,6 +183,11 @@ def build_digest() -> dict[str, Any]:
         if final_row.get("paper_signals_total") is not None
         else operator_console.get("total_paper_signals")
     )
+    final_ranked_alert_count = (
+        final_row.get("ranked_alert_count")
+        if final_row.get("ranked_alert_count") is not None
+        else paper_ranker.get("ranked_alert_count")
+    )
 
     unsafe_flags = (
         ledger_preserved_final is not True
@@ -198,7 +209,16 @@ def build_digest() -> dict[str, Any]:
         or final_row.get("freshness_flags")
         or []
     )
-    review_freshness_flags = [flag for flag in freshness_flags_final if flag != "OK_FRESH_LIVE_CYCLE"]
+    historical_static_review_final = (
+        live_freshness_report.get("historical_metric_static_review")
+        or live_freshness_from_full_cycle.get("historical_metric_static_review")
+        or []
+    )
+    review_freshness_flags = [
+        flag
+        for flag in freshness_flags_final
+        if flag != "OK_FRESH_LIVE_CYCLE" and flag not in HISTORICAL_STATIC_REVIEW_FLAGS
+    ]
     total_new_snapshots_appended = summary.get("total_new_snapshots_appended")
     if total_new_snapshots_appended is None:
         total_new_snapshots_appended = sum(int(row.get("new_snapshots_appended") or 0) for row in rows)
@@ -242,6 +262,7 @@ def build_digest() -> dict[str, Any]:
         "total_repeated_paper_alerts": total_repeated_paper_alerts,
         "any_sendable_discord_payload": any_sendable_discord_payload,
         "final_paper_signals_total": final_paper_signals_total,
+        "final_ranked_alert_count": final_ranked_alert_count,
         "min_post_quarantine_pnl": summary_value(summary, rows, "min_post_quarantine_pnl"),
         "max_post_quarantine_pnl": summary_value(summary, rows, "max_post_quarantine_pnl"),
         "min_post_quarantine_roi": summary_value(summary, rows, "min_post_quarantine_roi"),
@@ -249,6 +270,7 @@ def build_digest() -> dict[str, Any]:
         "final_live_freshness_status": final_live_freshness_status,
         "total_new_snapshots_appended": total_new_snapshots_appended,
         "freshness_flags_final": freshness_flags_final,
+        "historical_static_review_final": historical_static_review_final,
         "verdict": verdict,
         "recommendations": build_recommendations(verdict, stopped_reason, freshness_flags_final),
     }
@@ -275,6 +297,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "total_repeated_paper_alerts",
         "any_sendable_discord_payload",
         "final_paper_signals_total",
+        "final_ranked_alert_count",
         "min_post_quarantine_pnl",
         "max_post_quarantine_pnl",
         "min_post_quarantine_roi",
@@ -282,6 +305,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "final_live_freshness_status",
         "total_new_snapshots_appended",
         "freshness_flags_final",
+        "historical_static_review_final",
         "verdict",
     ]
 

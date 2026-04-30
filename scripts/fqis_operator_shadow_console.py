@@ -15,11 +15,18 @@ SHADOW_READINESS_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
+PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
+OPERATOR_PAPER_DECISION_SHEET_JSON = ORCH_DIR / "latest_operator_paper_decision_sheet.json"
 DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 TONIGHT_MONITOR_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
 TONIGHT_DIGEST_JSON = ORCH_DIR / "latest_tonight_shadow_digest.json"
 OUT_JSON = ORCH_DIR / "latest_operator_shadow_console.json"
 OUT_MD = ORCH_DIR / "latest_operator_shadow_console.md"
+
+HISTORICAL_STATIC_REVIEW_FLAGS = {
+    "CONSTANT_POST_QUARANTINE_PNL_REVIEW",
+    "CONSTANT_FIXTURE_PNL_REVIEW",
+}
 
 
 def utc_now() -> str:
@@ -75,6 +82,33 @@ def monitor_section(monitor: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def freshness_review_state(freshness: dict[str, Any]) -> dict[str, Any]:
+    raw_flags = [str(flag) for flag in freshness.get("freshness_flags") or []]
+    historical_flags = [str(flag) for flag in freshness.get("historical_metric_static_review") or []]
+    legacy_historical = [flag for flag in raw_flags if flag in HISTORICAL_STATIC_REVIEW_FLAGS]
+    live_review_flags = [
+        flag
+        for flag in raw_flags
+        if flag != "OK_FRESH_LIVE_CYCLE" and flag not in HISTORICAL_STATIC_REVIEW_FLAGS
+    ]
+    historical_static_review = sorted(set([*historical_flags, *legacy_historical]))
+    only_historical_static_review = bool(historical_static_review) and not live_review_flags
+    freshness_ok_for_paper_ready = (
+        freshness.get("status") == "READY"
+        or (
+            freshness.get("status") == "STALE_REVIEW"
+            and only_historical_static_review
+        )
+    ) and freshness.get("status") != "MISSING_INPUTS"
+    return {
+        "flags": raw_flags,
+        "live_review_flags": live_review_flags,
+        "historical_metric_static_review": historical_static_review,
+        "only_historical_static_review": only_historical_static_review,
+        "freshness_ok_for_paper_ready": freshness_ok_for_paper_ready,
+    }
+
+
 def build_payload() -> dict[str, Any]:
     generated_at_utc = utc_now()
     full_cycle = read_json(FULL_CYCLE_JSON)
@@ -84,6 +118,8 @@ def build_payload() -> dict[str, Any]:
     freshness = read_json(LIVE_FRESHNESS_JSON)
     paper_export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
+    ranker = read_json(PAPER_ALERT_RANKER_JSON)
+    decision_sheet = read_json(OPERATOR_PAPER_DECISION_SHEET_JSON)
     discord_payload = read_json(DISCORD_PAPER_PAYLOAD_JSON)
     monitor = read_json(TONIGHT_MONITOR_JSON) if TONIGHT_MONITOR_JSON.exists() else {}
     digest = read_json(TONIGHT_DIGEST_JSON) if TONIGHT_DIGEST_JSON.exists() else {}
@@ -101,17 +137,23 @@ def build_payload() -> dict[str, Any]:
         "can_execute_real_bets": safe_bool(
             shadow.get("can_execute_real_bets"),
             paper_export.get("can_execute_real_bets"),
+            ranker.get("can_execute_real_bets"),
+            decision_sheet.get("can_execute_real_bets"),
             discord_payload.get("can_execute_real_bets"),
         ),
         "can_enable_live_staking": safe_bool(
             shadow.get("can_enable_live_staking"),
             paper_export.get("can_enable_live_staking"),
+            ranker.get("can_enable_live_staking"),
+            decision_sheet.get("can_enable_live_staking"),
             discord_payload.get("can_enable_live_staking"),
         ),
         "can_mutate_ledger": safe_bool(
             shadow.get("can_mutate_ledger"),
             paper_export.get("can_mutate_ledger"),
             dedupe.get("can_mutate_ledger"),
+            ranker.get("can_mutate_ledger"),
+            decision_sheet.get("can_mutate_ledger"),
             discord_payload.get("can_mutate_ledger"),
         ),
     }
@@ -123,6 +165,8 @@ def build_payload() -> dict[str, Any]:
         "live_freshness": freshness,
         "paper_signal_export": paper_export,
         "paper_alert_dedupe": dedupe,
+        "paper_alert_ranker": ranker,
+        "operator_paper_decision_sheet": decision_sheet,
         "discord_paper_payload": discord_payload,
     }
     unsafe_names = {
@@ -158,8 +202,17 @@ def build_payload() -> dict[str, Any]:
         reasons.append("PAPER_SIGNAL_EXPORT_BLOCKED")
     if dedupe.get("status") == "BLOCKED":
         reasons.append("PAPER_ALERT_DEDUPE_BLOCKED")
+    if ranker.get("status") == "BLOCKED":
+        reasons.append("PAPER_ALERT_RANKER_BLOCKED")
+    if decision_sheet.get("status") == "BLOCKED":
+        reasons.append("OPERATOR_PAPER_DECISION_SHEET_BLOCKED")
     if discord_payload.get("status") == "BLOCKED":
         reasons.append("DISCORD_PAYLOAD_UNSAFE")
+
+    freshness_review = freshness_review_state(freshness)
+    ranked_alert_count = int(ranker.get("ranked_alert_count") or 0)
+    top_ranked_alert_count = int(ranker.get("top_ranked_alert_count") or 0)
+    no_useful_alerts = ranked_alert_count <= 0
 
     if (
         any(safety.values())
@@ -171,26 +224,39 @@ def build_payload() -> dict[str, Any]:
         or shadow.get("shadow_state") != "SHADOW_READY"
         or paper_export.get("status") == "BLOCKED"
         or dedupe.get("status") == "BLOCKED"
+        or ranker.get("status") == "BLOCKED"
+        or decision_sheet.get("status") == "BLOCKED"
         or discord_payload.get("status") == "BLOCKED"
     ):
         operator_state = "PAPER_BLOCKED"
         status = "BLOCKED"
         next_action = "STOP_SESSION"
-    elif freshness.get("status") == "STALE_REVIEW":
+    elif freshness_review["live_review_flags"]:
         operator_state = "PAPER_REVIEW"
         status = "REVIEW"
         next_action = "INSPECT_FRESHNESS"
-        reasons.append("LIVE_FRESHNESS_STALE_REVIEW")
+        reasons.append("LIVE_FRESHNESS_LIVE_DATA_REVIEW")
+    elif no_useful_alerts:
+        operator_state = "PAPER_REVIEW"
+        status = "REVIEW"
+        next_action = "INSPECT_RANKER"
+        reasons.append("NO_USEFUL_RANKED_PAPER_ALERTS")
     elif (
         full_cycle.get("status") == "READY"
         and shadow.get("shadow_state") == "SHADOW_READY"
         and paper_export.get("status") == "READY"
+        and dedupe.get("status") == "READY"
+        and ranker.get("status") == "READY"
+        and decision_sheet.get("status") == "READY"
+        and freshness_review["freshness_ok_for_paper_ready"]
     ):
         operator_state = "PAPER_READY"
         status = "READY"
         next_action = "CONTINUE_SHADOW_MONITORING"
         if not reasons:
             reasons.append("PAPER_ONLY_SIGNAL_LAYER_READY")
+        if freshness_review["only_historical_static_review"]:
+            reasons.append("HISTORICAL_STATIC_REVIEW_ONLY_NOT_LIVE_FRESHNESS")
     else:
         operator_state = "PAPER_REVIEW"
         status = "REVIEW"
@@ -199,13 +265,22 @@ def build_payload() -> dict[str, Any]:
 
     freshness_section = {
         "status": freshness.get("status"),
-        "flags": freshness.get("freshness_flags") or [],
+        "flags": freshness_review["flags"],
+        "live_review_flags": freshness_review["live_review_flags"],
+        "historical_metric_static_review": freshness_review["historical_metric_static_review"],
+        "only_historical_static_review": freshness_review["only_historical_static_review"],
         "decisions_total": freshness.get("decisions_total"),
         "candidates_this_cycle": freshness.get("candidates_this_cycle"),
         "new_snapshots_appended": freshness.get("new_snapshots_appended"),
     }
     paper_counts = {
         "total_paper_signals": paper_export.get("paper_signals_total") or paper_export.get("total_decisions") or 0,
+        "paper_alert_ranker_status": ranker.get("status"),
+        "operator_paper_decision_sheet_status": decision_sheet.get("status"),
+        "ranked_alert_count": ranked_alert_count,
+        "top_ranked_alert_count": top_ranked_alert_count,
+        "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
+        "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
         "new_paper_alerts": dedupe.get("new_alerts") or 0,
         "repeated_paper_alerts": dedupe.get("repeated_alerts") or 0,
         "sendable_discord_payload": discord_payload.get("sendable") is True,
@@ -226,6 +301,17 @@ def build_payload() -> dict[str, Any]:
         "full_cycle_status": full_cycle.get("status"),
         "paper_counts": paper_counts,
         "freshness": freshness_section,
+        "paper_alert_ranker": {
+            "status": ranker.get("status"),
+            "ranked_alert_count": ranked_alert_count,
+            "top_ranked_alert_count": top_ranked_alert_count,
+            "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
+            "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
+        },
+        "operator_paper_decision_sheet": {
+            "status": decision_sheet.get("status"),
+            "top_ranked_alert_count": decision_sheet.get("top_ranked_alert_count") or 0,
+        },
         "monitor": monitor_info,
         "discord": {
             "status": discord_payload.get("status"),
@@ -275,6 +361,8 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         f"- Status: **{freshness.get('status')}**",
         f"- Flags: **{', '.join(str(flag) for flag in freshness.get('flags') or []) or 'NONE'}**",
+        f"- Live review flags: **{', '.join(str(flag) for flag in freshness.get('live_review_flags') or []) or 'NONE'}**",
+        f"- Historical static review: **{', '.join(str(flag) for flag in freshness.get('historical_metric_static_review') or []) or 'NONE'}**",
         f"- Decisions total: **{freshness.get('decisions_total')}**",
         f"- Candidates this cycle: **{freshness.get('candidates_this_cycle')}**",
         f"- New snapshots appended: **{freshness.get('new_snapshots_appended')}**",
@@ -282,6 +370,12 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "## Paper Signals",
         "",
         f"- Total paper signals: **{paper_counts.get('total_paper_signals')}**",
+        f"- Paper alert ranker status: **{paper_counts.get('paper_alert_ranker_status')}**",
+        f"- Decision sheet status: **{paper_counts.get('operator_paper_decision_sheet_status')}**",
+        f"- Ranked alerts: **{paper_counts.get('ranked_alert_count')}**",
+        f"- Top ranked alerts: **{paper_counts.get('top_ranked_alert_count')}**",
+        f"- New ranked alerts: **{paper_counts.get('new_ranked_alert_count')}**",
+        f"- Repeated ranked alerts: **{paper_counts.get('repeated_ranked_alert_count')}**",
         f"- New paper alerts: **{paper_counts.get('new_paper_alerts')}**",
         f"- Repeated paper alerts: **{paper_counts.get('repeated_paper_alerts')}**",
         "",

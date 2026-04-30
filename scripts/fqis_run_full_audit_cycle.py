@@ -45,6 +45,8 @@ REPORT_PATHS = {
     "live_freshness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_freshness_report.json",
     "paper_signal_export": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_signal_export.json",
     "paper_alert_dedupe": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_dedupe.json",
+    "paper_alert_ranker": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_ranker.json",
+    "operator_paper_decision_sheet": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_paper_decision_sheet.json",
     "discord_paper_payload": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_discord_paper_payload.json",
     "operator_shadow_console": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.json",
 }
@@ -228,6 +230,8 @@ def write_master_report(payload: dict[str, Any]) -> None:
     freshness_flags = freshness.get("freshness_flags") or []
     paper_export = reports.get("paper_signal_export", {})
     paper_dedupe = reports.get("paper_alert_dedupe", {})
+    paper_ranker = reports.get("paper_alert_ranker", {})
+    decision_sheet = reports.get("operator_paper_decision_sheet", {})
     discord_payload = reports.get("discord_paper_payload", {})
     operator_console = reports.get("operator_shadow_console", {})
 
@@ -293,6 +297,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- New snapshots appended: **{freshness.get('new_snapshots_appended', 0)}**",
         f"- Ledger rows total: **{freshness.get('ledger_rows_total', 0)}**",
         f"- Freshness flags: **{', '.join(str(flag) for flag in freshness_flags) if freshness_flags else 'NONE'}**",
+        f"- Historical static review: **{', '.join(str(flag) for flag in freshness.get('historical_metric_static_review') or []) or 'NONE'}**",
         "",
         "## Paper Signal Export",
         "",
@@ -311,6 +316,30 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Suppressed repeats: **{paper_dedupe.get('suppressed_repeats', 0)}**",
         f"- State size: **{paper_dedupe.get('state_size', 0)}**",
         "",
+        "## Paper Alert Ranker",
+        "",
+        f"- Status: **{paper_ranker.get('status', 'UNKNOWN')}**",
+        f"- Ranked alert count: **{paper_ranker.get('ranked_alert_count', 0)}**",
+        f"- Top ranked alert count: **{paper_ranker.get('top_ranked_alert_count', 0)}**",
+        f"- New ranked alerts: **{paper_ranker.get('new_ranked_alert_count', 0)}**",
+        f"- Repeated ranked alerts: **{paper_ranker.get('repeated_ranked_alert_count', 0)}**",
+        f"- Paper only: **{paper_ranker.get('paper_only', True)}**",
+        f"- Can execute real bets: **{paper_ranker.get('can_execute_real_bets', False)}**",
+        f"- Can enable live staking: **{paper_ranker.get('can_enable_live_staking', False)}**",
+        f"- Can mutate ledger: **{paper_ranker.get('can_mutate_ledger', False)}**",
+        "",
+        "## Operator Paper Decision Sheet",
+        "",
+        f"- Status: **{decision_sheet.get('status', 'UNKNOWN')}**",
+        f"- Ranked alert count: **{decision_sheet.get('ranked_alert_count', 0)}**",
+        f"- Top ranked alert count: **{decision_sheet.get('top_ranked_alert_count', 0)}**",
+        f"- New paper alerts: **{decision_sheet.get('new_paper_alerts', 0)}**",
+        f"- Repeated paper alerts: **{decision_sheet.get('repeated_paper_alerts', 0)}**",
+        f"- Paper only: **{decision_sheet.get('paper_only', True)}**",
+        f"- Can execute real bets: **{decision_sheet.get('can_execute_real_bets', False)}**",
+        f"- Can enable live staking: **{decision_sheet.get('can_enable_live_staking', False)}**",
+        f"- Can mutate ledger: **{decision_sheet.get('can_mutate_ledger', False)}**",
+        "",
         "## Discord Paper Payload",
         "",
         f"- Status: **{discord_payload.get('status', 'UNKNOWN')}**",
@@ -324,6 +353,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Operator state: **{operator_console.get('operator_state', 'UNKNOWN')}**",
         f"- Next action: **{operator_console.get('next_action', 'UNKNOWN')}**",
         f"- Total paper signals: **{operator_console.get('total_paper_signals', 0)}**",
+        f"- Top ranked alerts: **{operator_console.get('top_ranked_alert_count', 0)}**",
         f"- New paper alerts: **{operator_console.get('new_paper_alerts', 0)}**",
         "",
         "## Final Verdict",
@@ -708,8 +738,10 @@ def main() -> int:
         ("18_live_freshness_report", "fqis_live_freshness_report.py"),
         ("19_paper_signal_export", "fqis_paper_signal_export.py"),
         ("20_paper_alert_dedupe", "fqis_paper_alert_dedupe.py"),
-        ("21_discord_paper_payload", "fqis_discord_paper_payload.py"),
-        ("22_operator_shadow_console", "fqis_operator_shadow_console.py"),
+        ("21_paper_alert_ranker", "fqis_paper_alert_ranker.py"),
+        ("22_operator_paper_decision_sheet", "fqis_operator_paper_decision_sheet.py"),
+        ("23_discord_paper_payload", "fqis_discord_paper_payload.py"),
+        ("24_operator_shadow_console", "fqis_operator_shadow_console.py"),
     ]
 
     generated_at_utc = utc_now()
@@ -738,6 +770,8 @@ def main() -> int:
             "live_freshness",
             "paper_signal_export",
             "paper_alert_dedupe",
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
         }
@@ -751,6 +785,8 @@ def main() -> int:
             "live_freshness",
             "paper_signal_export",
             "paper_alert_dedupe",
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
         }
@@ -763,6 +799,8 @@ def main() -> int:
         exclude={
             "paper_signal_export",
             "paper_alert_dedupe",
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
             "discord_paper_payload",
             "operator_shadow_console",
         }
@@ -771,20 +809,36 @@ def main() -> int:
     paper_label, paper_script = scripts[17]
     steps.append(run_step(paper_label, [CHILD_PYTHON, str(ROOT / "scripts" / paper_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
-        exclude={"paper_alert_dedupe", "discord_paper_payload", "operator_shadow_console"}
+        exclude={
+            "paper_alert_dedupe",
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+        }
     )
 
     dedupe_label, dedupe_script = scripts[18]
     steps.append(run_step(dedupe_label, [CHILD_PYTHON, str(ROOT / "scripts" / dedupe_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
-        exclude={"discord_paper_payload", "operator_shadow_console"}
+        exclude={"paper_alert_ranker", "operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console"}
     )
 
-    discord_label, discord_script = scripts[19]
+    ranker_label, ranker_script = scripts[19]
+    steps.append(run_step(ranker_label, [CHILD_PYTHON, str(ROOT / "scripts" / ranker_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={"operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console"}
+    )
+
+    sheet_label, sheet_script = scripts[20]
+    steps.append(run_step(sheet_label, [CHILD_PYTHON, str(ROOT / "scripts" / sheet_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(exclude={"discord_paper_payload", "operator_shadow_console"})
+
+    discord_label, discord_script = scripts[21]
     steps.append(run_step(discord_label, [CHILD_PYTHON, str(ROOT / "scripts" / discord_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console"})
 
-    operator_label, operator_script = scripts[20]
+    operator_label, operator_script = scripts[22]
     steps.append(run_step(operator_label, [CHILD_PYTHON, str(ROOT / "scripts" / operator_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
@@ -797,6 +851,7 @@ def main() -> int:
     operator_console = reports.get("operator_shadow_console") or {}
     paper_export = reports.get("paper_signal_export") or {}
     paper_dedupe = reports.get("paper_alert_dedupe") or {}
+    paper_ranker = reports.get("paper_alert_ranker") or {}
     discord_payload = reports.get("discord_paper_payload") or {}
 
     print(json.dumps({
@@ -808,6 +863,7 @@ def main() -> int:
         "live_freshness_status": freshness.get("status"),
         "operator_state": operator_console.get("operator_state"),
         "paper_signals_total": paper_export.get("paper_signals_total") or paper_export.get("total_decisions"),
+        "top_ranked_alert_count": paper_ranker.get("top_ranked_alert_count") or paper_ranker.get("ranked_alert_count"),
         "new_paper_alerts": paper_dedupe.get("new_alerts"),
         "sendable_discord_payload": discord_payload.get("sendable"),
         "run_dir": str(run_dir),
