@@ -38,6 +38,8 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "19_paper_signal_export",
         "20_paper_alert_dedupe",
         "21_paper_alert_ranker",
+        "21b_clv_tracker_report",
+        "21c_promotion_policy_report",
         "22_operator_paper_decision_sheet",
         "23_discord_paper_payload",
         "24_operator_shadow_console",
@@ -51,6 +53,9 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "## Paper Signal Export",
         "## Paper Alert Dedupe",
         "## Paper Alert Ranker",
+        "## Proxy CLV Tracker",
+        "## Calibration Audit",
+        "## Promotion Policy",
         "## Operator Paper Decision Sheet",
         "## Discord Paper Payload",
         "## Operator Shadow Console",
@@ -63,6 +68,9 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "paper_signal_export",
         "paper_alert_dedupe",
         "paper_alert_ranker",
+        "clv_tracker",
+        "calibration",
+        "promotion_policy",
         "operator_paper_decision_sheet",
         "discord_paper_payload",
         "operator_shadow_console",
@@ -72,6 +80,20 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
     assert reports["paper_alert_ranker"]["can_execute_real_bets"] is False
     assert reports["paper_alert_ranker"]["can_enable_live_staking"] is False
     assert reports["paper_alert_ranker"]["can_mutate_ledger"] is False
+    assert reports["clv_tracker"]["can_execute_real_bets"] is False
+    assert reports["clv_tracker"]["can_enable_live_staking"] is False
+    assert reports["clv_tracker"]["can_mutate_ledger"] is False
+    assert reports["calibration"]["can_execute_real_bets"] is False
+    assert reports["calibration"]["can_enable_live_staking"] is False
+    assert reports["calibration"]["can_mutate_ledger"] is False
+    assert reports["promotion_policy"]["can_execute_real_bets"] is False
+    assert reports["promotion_policy"]["can_enable_live_staking"] is False
+    assert reports["promotion_policy"]["can_mutate_ledger"] is False
+    assert reports["promotion_policy"]["promotion_allowed"] is False
+    assert payload["clv_tracker_status"] in {"READY", "REVIEW", "EMPTY"}
+    assert payload["calibration_status"] in {"READY", "REVIEW", "EMPTY"}
+    assert payload["promotion_policy_status"] in {"READY", "REVIEW"}
+    assert payload["promotion_policy_verdict"] == "NO_PROMOTION_KEEP_RESEARCH"
     assert reports["operator_paper_decision_sheet"]["can_execute_real_bets"] is False
     assert reports["operator_paper_decision_sheet"]["can_enable_live_staking"] is False
     assert reports["operator_paper_decision_sheet"]["can_mutate_ledger"] is False

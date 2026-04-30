@@ -18,6 +18,9 @@ LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON = ORCH_DIR / "latest_level3_stats_coverage
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
 PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
+CLV_TRACKER_JSON = ORCH_DIR / "latest_clv_tracker_report.json"
+CALIBRATION_JSON = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_calibration_report.json"
+PROMOTION_POLICY_JSON = ORCH_DIR / "latest_promotion_policy_report.json"
 OPERATOR_PAPER_DECISION_SHEET_JSON = ORCH_DIR / "latest_operator_paper_decision_sheet.json"
 DISCORD_PAPER_PAYLOAD_JSON = ORCH_DIR / "latest_discord_paper_payload.json"
 TONIGHT_MONITOR_JSON = ORCH_DIR / "latest_tonight_shadow_monitor.json"
@@ -254,6 +257,9 @@ def build_payload() -> dict[str, Any]:
     paper_export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
     ranker = read_json(PAPER_ALERT_RANKER_JSON)
+    clv_tracker = read_json(CLV_TRACKER_JSON)
+    calibration = read_json(CALIBRATION_JSON)
+    promotion_policy = read_json(PROMOTION_POLICY_JSON)
     decision_sheet = read_json(OPERATOR_PAPER_DECISION_SHEET_JSON)
     discord_payload = read_json(DISCORD_PAPER_PAYLOAD_JSON)
     monitor = read_json(TONIGHT_MONITOR_JSON) if TONIGHT_MONITOR_JSON.exists() else {}
@@ -268,6 +274,8 @@ def build_payload() -> dict[str, Any]:
             daily_verdict.get("promotion_allowed"),
             live_opportunity_scanner.get("promotion_allowed"),
             (live_opportunity_scanner.get("safety") or {}).get("promotion_allowed"),
+            promotion_policy.get("promotion_allowed"),
+            (promotion_policy.get("safety") or {}).get("promotion_allowed"),
         ),
         "live_staking_allowed": safe_bool(
             go_no_go.get("live_staking_allowed"),
@@ -280,6 +288,9 @@ def build_payload() -> dict[str, Any]:
             shadow.get("can_execute_real_bets"),
             paper_export.get("can_execute_real_bets"),
             ranker.get("can_execute_real_bets"),
+            clv_tracker.get("can_execute_real_bets"),
+            calibration.get("can_execute_real_bets"),
+            promotion_policy.get("can_execute_real_bets"),
             decision_sheet.get("can_execute_real_bets"),
             discord_payload.get("can_execute_real_bets"),
             live_opportunity_scanner.get("can_execute_real_bets"),
@@ -289,6 +300,9 @@ def build_payload() -> dict[str, Any]:
             shadow.get("can_enable_live_staking"),
             paper_export.get("can_enable_live_staking"),
             ranker.get("can_enable_live_staking"),
+            clv_tracker.get("can_enable_live_staking"),
+            calibration.get("can_enable_live_staking"),
+            promotion_policy.get("can_enable_live_staking"),
             decision_sheet.get("can_enable_live_staking"),
             discord_payload.get("can_enable_live_staking"),
             live_opportunity_scanner.get("can_enable_live_staking"),
@@ -299,6 +313,9 @@ def build_payload() -> dict[str, Any]:
             paper_export.get("can_mutate_ledger"),
             dedupe.get("can_mutate_ledger"),
             ranker.get("can_mutate_ledger"),
+            clv_tracker.get("can_mutate_ledger"),
+            calibration.get("can_mutate_ledger"),
+            promotion_policy.get("can_mutate_ledger"),
             decision_sheet.get("can_mutate_ledger"),
             discord_payload.get("can_mutate_ledger"),
             live_opportunity_scanner.get("can_mutate_ledger"),
@@ -320,6 +337,9 @@ def build_payload() -> dict[str, Any]:
     safety_inputs = {
         **inputs,
         "live_opportunity_scanner": live_opportunity_scanner,
+        "clv_tracker": clv_tracker,
+        "calibration": calibration,
+        "promotion_policy": promotion_policy,
     }
     unsafe_names = {
         "live_staking_allowed",
@@ -444,6 +464,10 @@ def build_payload() -> dict[str, Any]:
         "material_updates": dedupe.get("material_updates") or 0,
         "repeated_paper_alerts": dedupe.get("repeated_alerts") or 0,
         "sendable_discord_payload": discord_payload.get("sendable") is True,
+        "clv_tracker_status": clv_tracker.get("status") or ("MISSING" if clv_tracker.get("missing") else "UNKNOWN"),
+        "calibration_status": calibration.get("status") or ("MISSING" if calibration.get("missing") else "UNKNOWN"),
+        "promotion_policy_status": promotion_policy.get("status") or ("MISSING" if promotion_policy.get("missing") else "UNKNOWN"),
+        "promotion_policy_verdict": promotion_policy.get("final_verdict") or "UNKNOWN",
     }
     monitor_info = monitor_section(monitor, full_cycle, generated_at_utc)
 
@@ -474,6 +498,28 @@ def build_payload() -> dict[str, Any]:
             "new_ranked_alert_count": ranker.get("new_ranked_alert_count") or 0,
             "updated_ranked_alert_count": ranker.get("updated_ranked_alert_count") or 0,
             "repeated_ranked_alert_count": ranker.get("repeated_ranked_alert_count") or 0,
+        },
+        "clv_tracker": {
+            "status": paper_counts["clv_tracker_status"],
+            "total_records": clv_tracker.get("total_records", 0),
+            "eligible_records": clv_tracker.get("eligible_records", 0),
+            "favorable_move_rate": clv_tracker.get("favorable_move_rate"),
+            "warning_flags": clv_tracker.get("warning_flags") or [],
+        },
+        "calibration": {
+            "status": paper_counts["calibration_status"],
+            "total_rows": calibration.get("total_rows", 0),
+            "eligible_settled_rows": calibration.get("eligible_settled_rows", 0),
+            "brier_score": calibration.get("brier_score"),
+            "log_loss": calibration.get("log_loss"),
+            "warning_flags": calibration.get("warning_flags") or [],
+        },
+        "promotion_policy": {
+            "status": paper_counts["promotion_policy_status"],
+            "final_verdict": paper_counts["promotion_policy_verdict"],
+            "promotion_allowed": promotion_policy.get("promotion_allowed") is True,
+            "promotion_allowed_count": promotion_policy.get("promotion_allowed_count", 0),
+            "warning_flags": promotion_policy.get("warning_flags") or [],
         },
         "operator_paper_decision_sheet": {
             "status": decision_sheet.get("status"),
@@ -515,6 +561,9 @@ def write_markdown(payload: dict[str, Any]) -> None:
     live_opportunity_scanner = payload.get("live_opportunity_scanner") or {}
     level3_stats_coverage_diagnostic = payload.get("level3_stats_coverage_diagnostic") or {}
     paper_counts = payload.get("paper_counts") or {}
+    clv_tracker = payload.get("clv_tracker") or {}
+    calibration = payload.get("calibration") or {}
+    promotion_policy = payload.get("promotion_policy") or {}
     discord = payload.get("discord") or {}
     monitor = payload.get("monitor") or {}
     lines = [
@@ -590,6 +639,18 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Repeated ranked alerts: **{paper_counts.get('repeated_ranked_alert_count')}**",
         f"- New paper alerts: **{paper_counts.get('new_paper_alerts')}**",
         f"- Repeated paper alerts: **{paper_counts.get('repeated_paper_alerts')}**",
+        "",
+        "## Proxy CLV / Calibration / Promotion",
+        "",
+        f"- Proxy CLV status: **{clv_tracker.get('status')}**",
+        f"- Proxy CLV eligible records: **{clv_tracker.get('eligible_records')}**",
+        f"- Proxy CLV favorable move rate: **{clv_tracker.get('favorable_move_rate')}**",
+        f"- Calibration status: **{calibration.get('status')}**",
+        f"- Calibration eligible settled rows: **{calibration.get('eligible_settled_rows')}**",
+        f"- Calibration Brier score: **{calibration.get('brier_score')}**",
+        f"- Promotion policy status: **{promotion_policy.get('status')}**",
+        f"- Promotion policy verdict: **{promotion_policy.get('final_verdict')}**",
+        f"- Promotion policy allowed: **{promotion_policy.get('promotion_allowed')}**",
         "",
         "## Discord Paper Payload",
         "",
