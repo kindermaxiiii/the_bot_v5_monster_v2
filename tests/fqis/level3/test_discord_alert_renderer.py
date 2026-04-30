@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import json
 import py_compile
 import subprocess
@@ -75,3 +76,43 @@ def test_discord_alert_renderer_runs_preview_only_and_preserves_ledger():
 
     stdout_payload = json.loads(result.stdout)
     assert stdout_payload["discord_send_performed"] is False
+
+
+def test_quarantine_bucket_sendable_new_canonical_routes_to_model_logs(tmp_path, monkeypatch):
+    renderer = importlib.import_module("scripts.fqis_discord_alert_renderer")
+
+    input_payload = {
+        "status": "READY",
+        "sendable": True,
+        "send_reason": "NEW_CANONICAL_PAPER_ALERTS_READY",
+        "alert_records": [
+            {
+                "alert_lifecycle_status": "NEW_CANONICAL",
+                "discord_sendable": True,
+                "bucket_policy_action": "KILL_OR_QUARANTINE_BUCKET",
+                "match": "Home FC vs Away FC",
+                "market": "Home FC +0.5",
+                "odds": 2.1,
+                "edge": 0.08,
+                "expected_value": 0.11,
+                "p_model": 0.58,
+            }
+        ],
+    }
+
+    source_payload = tmp_path / "latest_discord_paper_payload.json"
+    source_payload.write_text(json.dumps(input_payload), encoding="utf-8")
+
+    monkeypatch.setattr(renderer, "DISCORD_PAYLOAD_JSON", source_payload)
+    monkeypatch.setattr(renderer, "OUT_JSON", tmp_path / "latest_discord_alert_renderer.json")
+    monkeypatch.setattr(renderer, "OUT_MD", tmp_path / "latest_discord_alert_renderer.md")
+    monkeypatch.setattr(renderer, "OUT_HTML", tmp_path / "latest_discord_alert_preview.html")
+
+    payload = renderer.build_payload()
+
+    assert payload["source_payload_sendable"] is True
+    assert payload["source_send_reason"] == "NEW_CANONICAL_PAPER_ALERTS_READY"
+    assert payload["elite_alerts_count"] == 0
+    assert payload["model_logs_count"] >= 1
+    assert payload["model_logs"][0]["route"] == "model_logs"
+    assert "KILL_OR_QUARANTINE_BUCKET" in payload["model_logs"][0]["risk_notes"]
