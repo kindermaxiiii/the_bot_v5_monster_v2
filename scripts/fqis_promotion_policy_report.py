@@ -73,29 +73,37 @@ def records_from_ranker(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def group_key(bucket: str, market: str) -> str:
-    return f"{safe_text(bucket)}||{safe_text(market)}"
+def group_key(bucket: str, market: str, selection: str) -> str:
+    return f"{safe_text(bucket)}||{safe_text(market)}||{safe_text(selection)}"
 
 
 def grouped_alerts(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        grouped.setdefault(group_key(record.get("research_bucket"), record.get("market")), []).append(record)
+        grouped.setdefault(
+            group_key(record.get("research_bucket"), record.get("market"), record.get("selection")),
+            [],
+        ).append(record)
     return grouped
 
 
 def collect_group_keys(records: list[dict[str, Any]], clv: dict[str, Any], calibration: dict[str, Any]) -> list[str]:
     keys = set(grouped_alerts(records))
-    keys.update((clv.get("by_research_bucket_market") or {}).keys())
-    keys.update((calibration.get("by_research_bucket_market") or {}).keys())
+    keys.update((clv.get("by_research_bucket_market_selection") or {}).keys())
+    keys.update((calibration.get("by_research_bucket_market_selection") or {}).keys())
+    for legacy_key in (clv.get("by_research_bucket_market") or {}).keys():
+        keys.add(f"{legacy_key}||UNKNOWN")
+    for legacy_key in (calibration.get("by_research_bucket_market") or {}).keys():
+        keys.add(f"{legacy_key}||UNKNOWN")
     return sorted(keys)
 
 
-def split_group_key(key: str) -> tuple[str, str]:
-    if "||" not in key:
-        return key, "UNKNOWN"
-    bucket, market = key.split("||", 1)
-    return bucket or "UNKNOWN", market or "UNKNOWN"
+def split_group_key(key: str) -> tuple[str, str, str]:
+    parts = key.split("||")
+    while len(parts) < 3:
+        parts.append("UNKNOWN")
+    bucket, market, selection = parts[:3]
+    return bucket or "UNKNOWN", market or "UNKNOWN", selection or "UNKNOWN"
 
 
 def count_hard_red_flags(records: list[dict[str, Any]]) -> int:
@@ -136,9 +144,15 @@ def bucket_policy_for(bucket: str, bucket_policy: dict[str, Any]) -> dict[str, A
     return policies.get(bucket) or {}
 
 
-def metric_for(payload: dict[str, Any], key: str, bucket: str, market: str) -> dict[str, Any] | None:
+def metric_for(payload: dict[str, Any], key: str, bucket: str, market: str, selection: str) -> dict[str, Any] | None:
+    if safe_text(selection) != "UNKNOWN":
+        table = payload.get("by_research_bucket_market_selection") or {}
+        if isinstance(table, dict) and isinstance(table.get(key), dict):
+            return table[key]
+        return None
+
     for field, lookup_key in (
-        ("by_research_bucket_market", key),
+        ("by_research_bucket_market", f"{bucket}||{market}"),
         ("by_research_bucket", bucket),
         ("by_market", market),
     ):
@@ -160,13 +174,13 @@ def evaluate_group(
     calibration: dict[str, Any],
     bucket_policy: dict[str, Any],
 ) -> dict[str, Any]:
-    bucket, market = split_group_key(key)
+    bucket, market, selection = split_group_key(key)
     blockers: list[str] = []
     hard_red_flags = count_hard_red_flags(alerts)
     data_tier = data_tier_readiness(alerts)
     policy = bucket_policy_for(bucket, bucket_policy)
-    clv_metric = metric_for(clv, key, bucket, market)
-    calibration_metric = metric_for(calibration, key, bucket, market)
+    clv_metric = metric_for(clv, key, bucket, market, selection)
+    calibration_metric = metric_for(calibration, key, bucket, market, selection)
 
     clv_status = clv.get("status") if isinstance(clv, dict) else None
     calibration_status = calibration.get("status") if isinstance(calibration, dict) else None
@@ -201,23 +215,25 @@ def evaluate_group(
     )
     add_blocker(blockers, data_tier["status"] != "READY", "DATA_TIER_NOT_STRICT_EVENTS_PLUS_STATS")
 
-    promotion_allowed = not blockers
+    paper_elite_candidate = not blockers
     if hard_red_flags > 0 or policy.get("action") == "KILL_OR_QUARANTINE_BUCKET":
         recommended_state = "QUARANTINE"
-    elif promotion_allowed:
+    elif paper_elite_candidate:
         recommended_state = "PAPER_ELITE_CANDIDATE"
     elif sample_size >= MIN_SAMPLE_SIZE // 2 and clv_metric is not None:
         recommended_state = "WATCHLIST"
     else:
         recommended_state = "KEEP_RESEARCH"
 
-    final_verdict = "PAPER_ELITE_CANDIDATE_REVIEW" if promotion_allowed else "NO_PROMOTION_KEEP_RESEARCH"
+    final_verdict = "PAPER_ELITE_CANDIDATE_REVIEW" if paper_elite_candidate else "NO_PROMOTION_KEEP_RESEARCH"
 
     return {
         "evaluation_key": key,
         "research_bucket": bucket,
         "market": market,
-        "promotion_allowed": promotion_allowed,
+        "selection": selection,
+        "paper_elite_candidate": paper_elite_candidate,
+        "promotion_allowed": False,
         "recommended_state": recommended_state,
         "blockers": blockers,
         "sample_size": sample_size,
@@ -253,7 +269,7 @@ def build_report(
         evaluate_group(key, alerts_by_group.get(key, []), clv, calibration, bucket_policy)
         for key in keys
     ]
-    any_allowed = any(item["promotion_allowed"] for item in evaluations)
+    paper_elite_candidate_count = sum(1 for item in evaluations if item["paper_elite_candidate"])
     missing_inputs = [
         name
         for name, payload in {
@@ -271,7 +287,7 @@ def build_report(
         warning_flags.append("NO_BUCKET_MARKET_EVALUATIONS")
 
     status = "REVIEW" if missing_inputs or not evaluations else "READY"
-    final_verdict = "PAPER_ELITE_CANDIDATE_REVIEW" if any_allowed else "NO_PROMOTION_KEEP_RESEARCH"
+    final_verdict = "PAPER_ELITE_CANDIDATE_REVIEW" if paper_elite_candidate_count else "NO_PROMOTION_KEEP_RESEARCH"
 
     return {
         "mode": "FQIS_PROMOTION_POLICY_REPORT",
@@ -292,18 +308,18 @@ def build_report(
             "max_absolute_calibration_error": MAX_ABSOLUTE_CALIBRATION_ERROR,
             "min_roi": MIN_ROI,
         },
-        "promotion_allowed": any_allowed,
-        "promotion_allowed_count": sum(1 for item in evaluations if item["promotion_allowed"]),
+        "promotion_allowed": False,
+        "promotion_allowed_count": 0,
+        "paper_elite_candidate_count": paper_elite_candidate_count,
         "recommended_state_counts": count_values(evaluations, "recommended_state"),
         "final_verdict": final_verdict,
         "evaluations": evaluations,
         "warning_flags": warning_flags,
         "safety": {
             **SAFETY_BLOCK,
-            "promotion_allowed": any_allowed,
         },
         **SAFETY_BLOCK,
-        "promotion_allowed": any_allowed,
+        "promotion_allowed": False,
     }
 
 
@@ -335,6 +351,7 @@ def write_markdown_report(report: dict[str, Any], output_path: Path) -> None:
         f"- Verdict: **{report.get('final_verdict')}**",
         f"- Promotion allowed: **{report.get('promotion_allowed')}**",
         f"- Promotion allowed count: **{report.get('promotion_allowed_count', 0)}**",
+        f"- Paper elite candidate count: **{report.get('paper_elite_candidate_count', 0)}**",
         "",
         "## Warning Flags",
         "",
@@ -349,15 +366,17 @@ def write_markdown_report(report: dict[str, Any], output_path: Path) -> None:
         "",
         "## Evaluations",
         "",
-        "| Bucket | Market | State | Allowed | Sample | Settled | ROI | Red flags | Blockers |",
-        "|---|---|---|---|---:|---:|---:|---:|---|",
+        "| Bucket | Market | Selection | State | Candidate | Allowed | Sample | Settled | ROI | Red flags | Blockers |",
+        "|---|---|---|---|---|---|---:|---:|---:|---:|---|",
     ]
     for item in report.get("evaluations") or []:
         lines.append(
-            "| {bucket} | {market} | {state} | {allowed} | {sample} | {settled} | {roi} | {flags} | {blockers} |".format(
+            "| {bucket} | {market} | {selection} | {state} | {candidate} | {allowed} | {sample} | {settled} | {roi} | {flags} | {blockers} |".format(
                 bucket=safe_text(item.get("research_bucket")),
                 market=safe_text(item.get("market")),
+                selection=safe_text(item.get("selection")),
                 state=safe_text(item.get("recommended_state")),
+                candidate=item.get("paper_elite_candidate"),
                 allowed=item.get("promotion_allowed"),
                 sample=item.get("sample_size", 0),
                 settled=item.get("settled_sample_size", 0),

@@ -234,6 +234,7 @@ def eligible_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         enriched["_p_model"] = p
         enriched["_outcome"] = outcome
         enriched["_market"] = safe_text(row.get("market") or row.get("market_key"))
+        enriched["_selection"] = safe_text(row.get("selection"))
         enriched["_research_bucket"] = safe_text(row.get("research_bucket"))
         enriched["_minute_bucket"] = minute_bucket(row.get("minute"))
         eligible.append(enriched)
@@ -266,6 +267,7 @@ def build_report(input_path: Path = SETTLEMENT_JSON) -> dict[str, Any]:
 
     for row in eligible:
         row["market"] = row["_market"]
+        row["selection"] = row["_selection"]
         row["research_bucket"] = row["_research_bucket"]
         row["minute_bucket"] = row["_minute_bucket"]
 
@@ -300,6 +302,14 @@ def build_report(input_path: Path = SETTLEMENT_JSON) -> dict[str, Any]:
         "by_research_bucket": group_summary(eligible, "research_bucket"),
         "by_minute_bucket": group_summary(eligible, "minute_bucket"),
         "by_research_bucket_market": compound_group_summary(eligible, ("research_bucket", "market")),
+        "by_research_bucket_market_selection": compound_group_summary(
+            eligible,
+            ("research_bucket", "market", "selection"),
+        ),
+        "by_research_bucket_market_selection_minute_bucket": compound_group_summary(
+            eligible,
+            ("research_bucket", "market", "selection", "minute_bucket"),
+        ),
         "warning_flags": sorted(set(warnings)),
         "safety": dict(SAFETY_BLOCK),
         **SAFETY_BLOCK,

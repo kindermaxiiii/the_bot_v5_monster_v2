@@ -519,6 +519,7 @@ def build_payload() -> dict[str, Any]:
             "final_verdict": paper_counts["promotion_policy_verdict"],
             "promotion_allowed": promotion_policy.get("promotion_allowed") is True,
             "promotion_allowed_count": promotion_policy.get("promotion_allowed_count", 0),
+            "paper_elite_candidate_count": promotion_policy.get("paper_elite_candidate_count", 0),
             "warning_flags": promotion_policy.get("warning_flags") or [],
         },
         "operator_paper_decision_sheet": {
@@ -651,6 +652,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- Promotion policy status: **{promotion_policy.get('status')}**",
         f"- Promotion policy verdict: **{promotion_policy.get('final_verdict')}**",
         f"- Promotion policy allowed: **{promotion_policy.get('promotion_allowed')}**",
+        f"- Paper elite candidates: **{promotion_policy.get('paper_elite_candidate_count')}**",
         "",
         "## Discord Paper Payload",
         "",

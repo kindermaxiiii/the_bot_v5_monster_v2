@@ -212,7 +212,10 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     assert payload["clv_tracker_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["calibration_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["promotion_policy_status"] in {"READY", "REVIEW"}
-    assert payload["promotion_policy_verdict"] == "NO_PROMOTION_KEEP_RESEARCH"
+    assert payload["promotion_policy_verdict"] in {
+        "NO_PROMOTION_KEEP_RESEARCH",
+        "PAPER_ELITE_CANDIDATE_REVIEW",
+    }
     assert "top_ranked_alert_count" in payload
     scanner = payload["live_opportunity_scanner"]
     assert scanner["status"] == "READY"

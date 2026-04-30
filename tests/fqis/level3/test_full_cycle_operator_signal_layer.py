@@ -93,7 +93,10 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
     assert payload["clv_tracker_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["calibration_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["promotion_policy_status"] in {"READY", "REVIEW"}
-    assert payload["promotion_policy_verdict"] == "NO_PROMOTION_KEEP_RESEARCH"
+    assert payload["promotion_policy_verdict"] in {
+        "NO_PROMOTION_KEEP_RESEARCH",
+        "PAPER_ELITE_CANDIDATE_REVIEW",
+    }
     assert reports["operator_paper_decision_sheet"]["can_execute_real_bets"] is False
     assert reports["operator_paper_decision_sheet"]["can_enable_live_staking"] is False
     assert reports["operator_paper_decision_sheet"]["can_mutate_ledger"] is False

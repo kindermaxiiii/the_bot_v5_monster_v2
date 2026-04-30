@@ -57,6 +57,7 @@ def test_calibration_audit_fixture_computes_bins_brier_and_log_loss(tmp_path: Pa
                         "result_status": "WIN",
                         "calibrated_probability": 0.80,
                         "market_key": "OU_FT",
+                        "selection": "Over 1.5",
                         "research_bucket": "STRICT_OVER_RESEARCH",
                         "minute": 55,
                     },
@@ -65,6 +66,7 @@ def test_calibration_audit_fixture_computes_bins_brier_and_log_loss(tmp_path: Pa
                         "result_status": "LOSS",
                         "calibrated_probability": 0.60,
                         "market_key": "OU_FT",
+                        "selection": "Over 1.5",
                         "research_bucket": "STRICT_OVER_RESEARCH",
                         "minute": 56,
                     },
@@ -73,6 +75,7 @@ def test_calibration_audit_fixture_computes_bins_brier_and_log_loss(tmp_path: Pa
                         "result_status": "WIN",
                         "calibrated_probability": 0.50,
                         "market_key": "BTTS",
+                        "selection": "Yes",
                         "research_bucket": "STRICT_MARKET_RESEARCH",
                         "minute": 44,
                     },
@@ -81,6 +84,7 @@ def test_calibration_audit_fixture_computes_bins_brier_and_log_loss(tmp_path: Pa
                         "result_status": "",
                         "calibrated_probability": 0.90,
                         "market_key": "OU_FT",
+                        "selection": "Over 1.5",
                         "research_bucket": "STRICT_OVER_RESEARCH",
                         "minute": 57,
                     },
@@ -109,6 +113,9 @@ def test_calibration_audit_fixture_computes_bins_brier_and_log_loss(tmp_path: Pa
     assert len(payload["calibration_bins"]) == 10
     assert payload["by_market"]["OU_FT"]["eligible_settled_rows"] == 2
     assert payload["by_research_bucket"]["STRICT_OVER_RESEARCH"]["empirical_hit_rate"] == 0.5
+    assert payload["by_research_bucket_market_selection"]["STRICT_OVER_RESEARCH||OU_FT||Over 1.5"][
+        "eligible_settled_rows"
+    ] == 2
     assert "INSUFFICIENT_SAMPLE:3<100" in payload["warning_flags"]
 
 

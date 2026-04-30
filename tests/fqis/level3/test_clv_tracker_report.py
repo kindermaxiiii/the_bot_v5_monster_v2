@@ -141,3 +141,12 @@ def test_proxy_clv_tracker_fixture_counts_favorable_unfavorable_and_flat(tmp_pat
     assert payload["favorable_move_rate"] == 0.333333
     assert payload["by_market"]["Total Goals FT"]["eligible_records"] == 2
     assert payload["by_selection"]["Under 2.5"]["favorable_move_count"] == 1
+    assert payload["by_research_bucket_market_selection"][
+        "STRICT_UNDER_2_5_RESEARCH||Total Goals FT||Under 2.5"
+    ]["eligible_records"] == 1
+    assert payload["by_research_bucket_market_selection"][
+        "STRICT_OVER_RESEARCH||Total Goals FT||Over 1.5"
+    ]["eligible_records"] == 1
+    assert payload["by_research_bucket_market_selection_minute_bucket"][
+        "STRICT_UNDER_2_5_RESEARCH||Total Goals FT||Under 2.5||40"
+    ]["favorable_move_count"] == 1

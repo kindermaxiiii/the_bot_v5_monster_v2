@@ -237,6 +237,14 @@ def build_report(input_path: Path = PAPER_ALERT_RANKER_JSON) -> dict[str, Any]:
         "by_minute_bucket": group_summary(movement_records, "minute_bucket"),
         "by_bucket_policy_action": group_summary(movement_records, "bucket_policy_action"),
         "by_research_bucket_market": compound_group_summary(movement_records, ("research_bucket", "market")),
+        "by_research_bucket_market_selection": compound_group_summary(
+            movement_records,
+            ("research_bucket", "market", "selection"),
+        ),
+        "by_research_bucket_market_selection_minute_bucket": compound_group_summary(
+            movement_records,
+            ("research_bucket", "market", "selection", "minute_bucket"),
+        ),
         "movement_records": movement_records,
         **summary,
         "warning_flags": warning_flags,

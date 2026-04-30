@@ -400,6 +400,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Verdict: **{promotion_policy.get('final_verdict', 'UNKNOWN')}**",
         f"- Promotion allowed: **{promotion_policy.get('promotion_allowed', False)}**",
         f"- Promotion allowed count: **{promotion_policy.get('promotion_allowed_count', 0)}**",
+        f"- Paper elite candidate count: **{promotion_policy.get('paper_elite_candidate_count', 0)}**",
         f"- Can execute real bets: **{promotion_policy.get('can_execute_real_bets', False)}**",
         "",
         "## Operator Paper Decision Sheet",
