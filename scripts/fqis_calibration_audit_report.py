@@ -12,6 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 RESEARCH_DIR = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger"
 
+SIGNAL_SETTLEMENT_JSON = RESEARCH_DIR / "latest_signal_settlement_report.json"
 SETTLEMENT_JSON = RESEARCH_DIR / "latest_research_settlement.json"
 OUT_JSON = RESEARCH_DIR / "latest_calibration_report.json"
 OUT_MD = RESEARCH_DIR / "latest_calibration_report.md"
@@ -241,12 +242,25 @@ def eligible_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return eligible
 
 
-def build_report(input_path: Path = SETTLEMENT_JSON) -> dict[str, Any]:
+def resolve_input_path(input_path: Path | None = None) -> tuple[Path, list[str], str]:
+    if input_path is not None:
+        return input_path, [], "explicit"
+    if SIGNAL_SETTLEMENT_JSON.exists():
+        return SIGNAL_SETTLEMENT_JSON, [], "signal_settlement"
+    return (
+        SETTLEMENT_JSON,
+        ["SIGNAL_SETTLEMENT_MISSING_USING_RESEARCH_SETTLEMENT_FALLBACK"],
+        "research_settlement_fallback",
+    )
+
+
+def build_report(input_path: Path | None = None) -> dict[str, Any]:
     generated_at_utc = utc_now()
-    rows, fields, read_error = read_rows(input_path)
+    resolved_input_path, source_warnings, input_source = resolve_input_path(input_path)
+    rows, fields, read_error = read_rows(resolved_input_path)
     required, missing = required_schema(fields)
     eligible = eligible_rows(rows) if not missing else []
-    warnings: list[str] = []
+    warnings: list[str] = list(source_warnings)
     if read_error:
         warnings.append(read_error)
     if missing:
@@ -285,10 +299,13 @@ def build_report(input_path: Path = SETTLEMENT_JSON) -> dict[str, Any]:
         "mode": "FQIS_CALIBRATION_AUDIT_REPORT",
         "status": status,
         "generated_at_utc": generated_at_utc,
-        "source_files_used": [str(input_path)],
+        "source_files_used": [str(resolved_input_path)],
         "source_files": {
-            "research_settlement": str(input_path),
+            "calibration_input": str(resolved_input_path),
+            "signal_settlement": str(SIGNAL_SETTLEMENT_JSON),
+            "research_settlement_fallback": str(SETTLEMENT_JSON),
         },
+        "input_source": input_source,
         "required_schema": required,
         "missing_columns": missing,
         "probability_field_preference": ["p_model", "calibrated_probability", "raw_probability"],
@@ -334,6 +351,7 @@ def write_markdown_report(report: dict[str, Any], output_path: Path) -> None:
         "",
         f"- Status: **{report.get('status')}**",
         f"- Generated at UTC: `{report.get('generated_at_utc')}`",
+        f"- Input source: **{report.get('input_source')}**",
         f"- Total rows: **{report.get('total_rows', 0)}**",
         f"- Eligible settled rows: **{report.get('eligible_settled_rows', 0)}**",
         f"- Brier score: **{report.get('brier_score')}**",
@@ -372,12 +390,12 @@ def write_markdown_report(report: dict[str, Any], output_path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build FQIS settled research calibration audit report.")
-    parser.add_argument("--input-path", default=str(SETTLEMENT_JSON))
+    parser.add_argument("--input-path", default=None)
     parser.add_argument("--output-json", default=str(OUT_JSON))
     parser.add_argument("--output-md", default=str(OUT_MD))
     args = parser.parse_args()
 
-    report = build_report(Path(args.input_path))
+    report = build_report(Path(args.input_path) if args.input_path else None)
     write_json_report(report, Path(args.output_json))
     write_markdown_report(report, Path(args.output_md))
 

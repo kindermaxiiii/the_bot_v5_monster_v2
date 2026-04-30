@@ -49,6 +49,7 @@ REPORT_PATHS = {
     "paper_signal_export": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_signal_export.json",
     "paper_alert_dedupe": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_dedupe.json",
     "paper_alert_ranker": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_ranker.json",
+    "signal_settlement": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_signal_settlement_report.json",
     "clv_tracker": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_clv_tracker_report.json",
     "promotion_policy": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_promotion_policy_report.json",
     "operator_paper_decision_sheet": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_paper_decision_sheet.json",
@@ -160,6 +161,7 @@ def build_payload(
     ledger_restore: dict[str, Any],
 ) -> dict[str, Any]:
     clv_tracker = reports.get("clv_tracker") or {}
+    signal_settlement = reports.get("signal_settlement") or {}
     calibration = reports.get("calibration") or {}
     promotion_policy = reports.get("promotion_policy") or {}
     return {
@@ -170,6 +172,9 @@ def build_payload(
         "steps": steps,
         "reports": reports,
         "clv_tracker_status": clv_tracker.get("status"),
+        "signal_settlement_status": signal_settlement.get("status"),
+        "settled_signals": signal_settlement.get("settled_signals"),
+        "paper_roi": signal_settlement.get("paper_roi"),
         "calibration_status": calibration.get("status"),
         "promotion_policy_status": promotion_policy.get("status"),
         "promotion_policy_verdict": promotion_policy.get("final_verdict"),
@@ -247,6 +252,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     paper_export = reports.get("paper_signal_export", {})
     paper_dedupe = reports.get("paper_alert_dedupe", {})
     paper_ranker = reports.get("paper_alert_ranker", {})
+    signal_settlement = reports.get("signal_settlement", {})
     clv_tracker = reports.get("clv_tracker", {})
     calibration = reports.get("calibration", {})
     promotion_policy = reports.get("promotion_policy", {})
@@ -375,6 +381,14 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Can execute real bets: **{paper_ranker.get('can_execute_real_bets', False)}**",
         f"- Can enable live staking: **{paper_ranker.get('can_enable_live_staking', False)}**",
         f"- Can mutate ledger: **{paper_ranker.get('can_mutate_ledger', False)}**",
+        "",
+        "## Signal Settlement Report",
+        "",
+        f"- Status: **{signal_settlement.get('status', 'UNKNOWN')}**",
+        f"- Total signals: **{signal_settlement.get('total_signals', 0)}**",
+        f"- Settled signals: **{signal_settlement.get('settled_signals', 0)}**",
+        f"- Paper ROI: **{signal_settlement.get('paper_roi', 0)}**",
+        f"- Can execute real bets: **{signal_settlement.get('can_execute_real_bets', False)}**",
         "",
         "## Proxy CLV Tracker",
         "",
@@ -811,7 +825,6 @@ def main() -> int:
         ("04_clv_tracker", "fqis_clv_tracker.py"),
         ("05_clv_horizon_audit", "fqis_clv_horizon_audit.py"),
         ("06_research_performance", "fqis_research_performance_report.py"),
-        ("06b_calibration_audit_report", "fqis_calibration_audit_report.py"),
         ("07_operator_report", "fqis_operator_decision_report.py"),
         ("08_provider_coverage", "fqis_provider_coverage_report.py"),
         ("08b_level3_stats_coverage_diagnostic", "fqis_level3_stats_coverage_diagnostic.py"),
@@ -828,8 +841,11 @@ def main() -> int:
         ("19_paper_signal_export", "fqis_paper_signal_export.py"),
         ("20_paper_alert_dedupe", "fqis_paper_alert_dedupe.py"),
         ("21_paper_alert_ranker", "fqis_paper_alert_ranker.py"),
-        ("21b_clv_tracker_report", "fqis_proxy_clv_tracker_report.py"),
-        ("21c_promotion_policy_report", "fqis_promotion_policy_report.py"),
+        ("21a_fixture_level_research_report", "fqis_fixture_level_research_report.py"),
+        ("21b_signal_settlement_report", "fqis_signal_settlement_report.py"),
+        ("21c_calibration_audit_report", "fqis_calibration_audit_report.py"),
+        ("21d_clv_tracker_report", "fqis_proxy_clv_tracker_report.py"),
+        ("21e_promotion_policy_report", "fqis_promotion_policy_report.py"),
         ("22_operator_paper_decision_sheet", "fqis_operator_paper_decision_sheet.py"),
         ("23_discord_paper_payload", "fqis_discord_paper_payload.py"),
         ("24_operator_shadow_console", "fqis_operator_shadow_console.py"),
@@ -853,7 +869,7 @@ def main() -> int:
         write_latest_payload(stage_payload)
         return stage_reports, stage_ledger_restore, stage_status, stage_payload
 
-    for label, script in scripts[:17]:
+    for label, script in scripts[:16]:
         steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -864,6 +880,8 @@ def main() -> int:
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -873,7 +891,7 @@ def main() -> int:
         }
     )
 
-    shadow_label, shadow_script = scripts[17]
+    shadow_label, shadow_script = scripts[16]
     steps.append(run_step(shadow_label, [CHILD_PYTHON, str(ROOT / "scripts" / shadow_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -883,6 +901,8 @@ def main() -> int:
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -892,7 +912,7 @@ def main() -> int:
         }
     )
 
-    freshness_label, freshness_script = scripts[18]
+    freshness_label, freshness_script = scripts[17]
     steps.append(run_step(freshness_label, [CHILD_PYTHON, str(ROOT / "scripts" / freshness_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -901,6 +921,8 @@ def main() -> int:
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -923,6 +945,8 @@ def main() -> int:
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -932,12 +956,14 @@ def main() -> int:
         }
     )
 
-    paper_label, paper_script = scripts[19]
+    paper_label, paper_script = scripts[18]
     steps.append(run_step(paper_label, [CHILD_PYTHON, str(ROOT / "scripts" / paper_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={
             "paper_alert_dedupe",
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -947,11 +973,13 @@ def main() -> int:
         }
     )
 
-    dedupe_label, dedupe_script = scripts[20]
+    dedupe_label, dedupe_script = scripts[19]
     steps.append(run_step(dedupe_label, [CHILD_PYTHON, str(ROOT / "scripts" / dedupe_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={
             "paper_alert_ranker",
+            "signal_settlement",
+            "calibration",
             "clv_tracker",
             "promotion_policy",
             "operator_paper_decision_sheet",
@@ -961,39 +989,90 @@ def main() -> int:
         }
     )
 
-    ranker_label, ranker_script = scripts[21]
+    ranker_label, ranker_script = scripts[20]
     steps.append(run_step(ranker_label, [CHILD_PYTHON, str(ROOT / "scripts" / ranker_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
-        exclude={"clv_tracker", "promotion_policy", "operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
+        exclude={
+            "signal_settlement",
+            "calibration",
+            "clv_tracker",
+            "promotion_policy",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
     )
 
-    clv_report_label, clv_report_script = scripts[22]
+    fixture_label, fixture_script = scripts[21]
+    steps.append(run_step(fixture_label, [CHILD_PYTHON, str(ROOT / "scripts" / fixture_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "signal_settlement",
+            "calibration",
+            "clv_tracker",
+            "promotion_policy",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
+    )
+
+    signal_label, signal_script = scripts[22]
+    steps.append(run_step(signal_label, [CHILD_PYTHON, str(ROOT / "scripts" / signal_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "calibration",
+            "clv_tracker",
+            "promotion_policy",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
+    )
+
+    calibration_label, calibration_script = scripts[23]
+    steps.append(run_step(calibration_label, [CHILD_PYTHON, str(ROOT / "scripts" / calibration_script)], run_dir))
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "clv_tracker",
+            "promotion_policy",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
+    )
+
+    clv_report_label, clv_report_script = scripts[24]
     steps.append(run_step(clv_report_label, [CHILD_PYTHON, str(ROOT / "scripts" / clv_report_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={"promotion_policy", "operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
-    promotion_label, promotion_script = scripts[23]
+    promotion_label, promotion_script = scripts[25]
     steps.append(run_step(promotion_label, [CHILD_PYTHON, str(ROOT / "scripts" / promotion_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={"operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
-    sheet_label, sheet_script = scripts[24]
+    sheet_label, sheet_script = scripts[26]
     steps.append(run_step(sheet_label, [CHILD_PYTHON, str(ROOT / "scripts" / sheet_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={"discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
-    discord_label, discord_script = scripts[25]
+    discord_label, discord_script = scripts[27]
     steps.append(run_step(discord_label, [CHILD_PYTHON, str(ROOT / "scripts" / discord_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console", "shadow_session_quality"})
 
-    operator_label, operator_script = scripts[26]
+    operator_label, operator_script = scripts[28]
     steps.append(run_step(operator_label, [CHILD_PYTHON, str(ROOT / "scripts" / operator_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(exclude={"shadow_session_quality"})
 
-    quality_label, quality_script = scripts[27]
+    quality_label, quality_script = scripts[29]
     steps.append(run_step(quality_label, [CHILD_PYTHON, str(ROOT / "scripts" / quality_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
@@ -1008,6 +1087,7 @@ def main() -> int:
     paper_export = reports.get("paper_signal_export") or {}
     paper_dedupe = reports.get("paper_alert_dedupe") or {}
     paper_ranker = reports.get("paper_alert_ranker") or {}
+    signal_settlement = reports.get("signal_settlement") or {}
     clv_tracker = reports.get("clv_tracker") or {}
     calibration = reports.get("calibration") or {}
     promotion_policy = reports.get("promotion_policy") or {}
@@ -1024,6 +1104,9 @@ def main() -> int:
         "operator_state": operator_console.get("operator_state"),
         "paper_signals_total": paper_export.get("paper_signals_total") or paper_export.get("total_decisions"),
         "top_ranked_alert_count": paper_ranker.get("top_ranked_alert_count") or paper_ranker.get("ranked_alert_count"),
+        "signal_settlement_status": signal_settlement.get("status"),
+        "settled_signals": signal_settlement.get("settled_signals"),
+        "paper_roi": signal_settlement.get("paper_roi"),
         "clv_tracker_status": clv_tracker.get("status"),
         "calibration_status": calibration.get("status"),
         "promotion_policy_status": promotion_policy.get("status"),
@@ -1040,16 +1123,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     exit_code = main()
-
-    # Fixture-level report is conservative anti-duplication research accounting.
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1]
-    fixture_script = root / "scripts" / "fqis_fixture_level_research_report.py"
-    if fixture_script.exists():
-        subprocess.run([CHILD_PYTHON, str(fixture_script)], check=False)
 
     inject_research_screening_diagnostics_into_latest_full_cycle_report()
     inject_fixture_level_research_into_latest_full_cycle_report()

@@ -19,6 +19,7 @@ PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
 PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
 CLV_TRACKER_JSON = ORCH_DIR / "latest_clv_tracker_report.json"
+SIGNAL_SETTLEMENT_JSON = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_signal_settlement_report.json"
 CALIBRATION_JSON = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_calibration_report.json"
 PROMOTION_POLICY_JSON = ORCH_DIR / "latest_promotion_policy_report.json"
 OPERATOR_PAPER_DECISION_SHEET_JSON = ORCH_DIR / "latest_operator_paper_decision_sheet.json"
@@ -258,6 +259,7 @@ def build_payload() -> dict[str, Any]:
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
     ranker = read_json(PAPER_ALERT_RANKER_JSON)
     clv_tracker = read_json(CLV_TRACKER_JSON)
+    signal_settlement = read_json(SIGNAL_SETTLEMENT_JSON)
     calibration = read_json(CALIBRATION_JSON)
     promotion_policy = read_json(PROMOTION_POLICY_JSON)
     decision_sheet = read_json(OPERATOR_PAPER_DECISION_SHEET_JSON)
@@ -274,6 +276,8 @@ def build_payload() -> dict[str, Any]:
             daily_verdict.get("promotion_allowed"),
             live_opportunity_scanner.get("promotion_allowed"),
             (live_opportunity_scanner.get("safety") or {}).get("promotion_allowed"),
+            signal_settlement.get("promotion_allowed"),
+            (signal_settlement.get("safety") or {}).get("promotion_allowed"),
             promotion_policy.get("promotion_allowed"),
             (promotion_policy.get("safety") or {}).get("promotion_allowed"),
         ),
@@ -281,6 +285,8 @@ def build_payload() -> dict[str, Any]:
             go_no_go.get("live_staking_allowed"),
             invariants.get("live_staking_enabled"),
             (paper_export.get("safety") or {}).get("live_staking_allowed"),
+            signal_settlement.get("live_staking_allowed"),
+            (signal_settlement.get("safety") or {}).get("live_staking_allowed"),
             live_opportunity_scanner.get("live_staking_allowed"),
             (live_opportunity_scanner.get("safety") or {}).get("live_staking_allowed"),
         ),
@@ -289,6 +295,7 @@ def build_payload() -> dict[str, Any]:
             paper_export.get("can_execute_real_bets"),
             ranker.get("can_execute_real_bets"),
             clv_tracker.get("can_execute_real_bets"),
+            signal_settlement.get("can_execute_real_bets"),
             calibration.get("can_execute_real_bets"),
             promotion_policy.get("can_execute_real_bets"),
             decision_sheet.get("can_execute_real_bets"),
@@ -301,6 +308,7 @@ def build_payload() -> dict[str, Any]:
             paper_export.get("can_enable_live_staking"),
             ranker.get("can_enable_live_staking"),
             clv_tracker.get("can_enable_live_staking"),
+            signal_settlement.get("can_enable_live_staking"),
             calibration.get("can_enable_live_staking"),
             promotion_policy.get("can_enable_live_staking"),
             decision_sheet.get("can_enable_live_staking"),
@@ -314,6 +322,7 @@ def build_payload() -> dict[str, Any]:
             dedupe.get("can_mutate_ledger"),
             ranker.get("can_mutate_ledger"),
             clv_tracker.get("can_mutate_ledger"),
+            signal_settlement.get("can_mutate_ledger"),
             calibration.get("can_mutate_ledger"),
             promotion_policy.get("can_mutate_ledger"),
             decision_sheet.get("can_mutate_ledger"),
@@ -331,6 +340,7 @@ def build_payload() -> dict[str, Any]:
         "paper_signal_export": paper_export,
         "paper_alert_dedupe": dedupe,
         "paper_alert_ranker": ranker,
+        "signal_settlement": signal_settlement,
         "operator_paper_decision_sheet": decision_sheet,
         "discord_paper_payload": discord_payload,
     }
@@ -338,6 +348,7 @@ def build_payload() -> dict[str, Any]:
         **inputs,
         "live_opportunity_scanner": live_opportunity_scanner,
         "clv_tracker": clv_tracker,
+        "signal_settlement": signal_settlement,
         "calibration": calibration,
         "promotion_policy": promotion_policy,
     }
@@ -465,6 +476,10 @@ def build_payload() -> dict[str, Any]:
         "repeated_paper_alerts": dedupe.get("repeated_alerts") or 0,
         "sendable_discord_payload": discord_payload.get("sendable") is True,
         "clv_tracker_status": clv_tracker.get("status") or ("MISSING" if clv_tracker.get("missing") else "UNKNOWN"),
+        "signal_settlement_status": signal_settlement.get("status") or ("MISSING" if signal_settlement.get("missing") else "UNKNOWN"),
+        "total_signals": signal_settlement.get("total_signals", 0),
+        "settled_signals": signal_settlement.get("settled_signals", 0),
+        "signal_paper_roi": signal_settlement.get("paper_roi"),
         "calibration_status": calibration.get("status") or ("MISSING" if calibration.get("missing") else "UNKNOWN"),
         "promotion_policy_status": promotion_policy.get("status") or ("MISSING" if promotion_policy.get("missing") else "UNKNOWN"),
         "promotion_policy_verdict": promotion_policy.get("final_verdict") or "UNKNOWN",
@@ -506,8 +521,16 @@ def build_payload() -> dict[str, Any]:
             "favorable_move_rate": clv_tracker.get("favorable_move_rate"),
             "warning_flags": clv_tracker.get("warning_flags") or [],
         },
+        "signal_settlement": {
+            "status": paper_counts["signal_settlement_status"],
+            "total_signals": signal_settlement.get("total_signals", 0),
+            "settled_signals": signal_settlement.get("settled_signals", 0),
+            "paper_roi": signal_settlement.get("paper_roi"),
+            "warning_flags": signal_settlement.get("warning_flags") or [],
+        },
         "calibration": {
             "status": paper_counts["calibration_status"],
+            "input_source": calibration.get("input_source"),
             "total_rows": calibration.get("total_rows", 0),
             "eligible_settled_rows": calibration.get("eligible_settled_rows", 0),
             "brier_score": calibration.get("brier_score"),
@@ -563,6 +586,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
     level3_stats_coverage_diagnostic = payload.get("level3_stats_coverage_diagnostic") or {}
     paper_counts = payload.get("paper_counts") or {}
     clv_tracker = payload.get("clv_tracker") or {}
+    signal_settlement = payload.get("signal_settlement") or {}
     calibration = payload.get("calibration") or {}
     promotion_policy = payload.get("promotion_policy") or {}
     discord = payload.get("discord") or {}
@@ -641,12 +665,21 @@ def write_markdown(payload: dict[str, Any]) -> None:
         f"- New paper alerts: **{paper_counts.get('new_paper_alerts')}**",
         f"- Repeated paper alerts: **{paper_counts.get('repeated_paper_alerts')}**",
         "",
+        "## Signal Settlement",
+        "",
+        f"- Signal settlement status: **{signal_settlement.get('status')}**",
+        f"- Total signals: **{signal_settlement.get('total_signals')}**",
+        f"- Settled signals: **{signal_settlement.get('settled_signals')}**",
+        f"- Signal paper ROI: **{signal_settlement.get('paper_roi')}**",
+        "",
         "## Proxy CLV / Calibration / Promotion",
         "",
         f"- Proxy CLV status: **{clv_tracker.get('status')}**",
         f"- Proxy CLV eligible records: **{clv_tracker.get('eligible_records')}**",
         f"- Proxy CLV favorable move rate: **{clv_tracker.get('favorable_move_rate')}**",
         f"- Calibration status: **{calibration.get('status')}**",
+        f"- Calibration input source: **{calibration.get('input_source')}**",
+        f"- Calibration warnings: **{', '.join(str(flag) for flag in calibration.get('warning_flags') or []) or 'NONE'}**",
         f"- Calibration eligible settled rows: **{calibration.get('eligible_settled_rows')}**",
         f"- Calibration Brier score: **{calibration.get('brier_score')}**",
         f"- Promotion policy status: **{promotion_policy.get('status')}**",

@@ -11,6 +11,7 @@ EXPORT_SCRIPT = ROOT / "scripts" / "fqis_paper_signal_export.py"
 DEDUPE_SCRIPT = ROOT / "scripts" / "fqis_paper_alert_dedupe.py"
 RANKER_SCRIPT = ROOT / "scripts" / "fqis_paper_alert_ranker.py"
 CLV_TRACKER_SCRIPT = ROOT / "scripts" / "fqis_proxy_clv_tracker_report.py"
+SIGNAL_SETTLEMENT_SCRIPT = ROOT / "scripts" / "fqis_signal_settlement_report.py"
 CALIBRATION_SCRIPT = ROOT / "scripts" / "fqis_calibration_audit_report.py"
 PROMOTION_POLICY_SCRIPT = ROOT / "scripts" / "fqis_promotion_policy_report.py"
 SHEET_SCRIPT = ROOT / "scripts" / "fqis_operator_paper_decision_sheet.py"
@@ -178,6 +179,7 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     run_script(EXPORT_SCRIPT)
     run_script(DEDUPE_SCRIPT)
     run_script(RANKER_SCRIPT)
+    run_script(SIGNAL_SETTLEMENT_SCRIPT)
     run_script(CLV_TRACKER_SCRIPT)
     run_script(CALIBRATION_SCRIPT)
     run_script(PROMOTION_POLICY_SCRIPT)
@@ -209,6 +211,7 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
         assert payload["safety"][flag] is False
     assert payload["paper_alert_ranker_status"] == "READY"
     assert payload["operator_paper_decision_sheet_status"] == "READY"
+    assert payload["signal_settlement_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["clv_tracker_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["calibration_status"] in {"READY", "REVIEW", "EMPTY"}
     assert payload["promotion_policy_status"] in {"READY", "REVIEW"}
@@ -249,6 +252,7 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     markdown = OUT_MD.read_text(encoding="utf-8")
     assert "Live Opportunity Scanner" in markdown
     assert "## Level 3 Stats Coverage Diagnostic" in markdown
+    assert "## Signal Settlement" in markdown
     assert "## Proxy CLV / Calibration / Promotion" in markdown
     assert "Promotion policy verdict" in markdown
     assert "- fixtures_seen: **12**" in markdown
@@ -275,6 +279,7 @@ def test_operator_shadow_console_can_be_ready_with_only_historical_static_freshn
     run_script(EXPORT_SCRIPT)
     run_script(DEDUPE_SCRIPT)
     run_script(RANKER_SCRIPT)
+    run_script(SIGNAL_SETTLEMENT_SCRIPT)
     run_script(CLV_TRACKER_SCRIPT)
     run_script(CALIBRATION_SCRIPT)
     run_script(PROMOTION_POLICY_SCRIPT)

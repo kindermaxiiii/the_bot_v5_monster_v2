@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import py_compile
 import subprocess
@@ -10,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "fqis_calibration_audit_report.py"
 LEDGER = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "research_candidates_ledger.csv"
 OUT_JSON = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_calibration_report.json"
+SIGNAL_SETTLEMENT_JSON = (
+    ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_signal_settlement_report.json"
+)
 
 
 def sha256(path: Path) -> str:
@@ -141,3 +145,77 @@ def test_calibration_audit_missing_outcome_schema_is_review_not_fake_calibration
     assert "result_status" in payload["missing_columns"]
     assert "settlement_status" in payload["missing_columns"]
     assert "MISSING_REQUIRED_CALIBRATION_SCHEMA" in payload["warning_flags"]
+
+
+def test_calibration_audit_defaults_to_signal_settlement_when_available(tmp_path: Path):
+    original = SIGNAL_SETTLEMENT_JSON.read_text(encoding="utf-8") if SIGNAL_SETTLEMENT_JSON.exists() else None
+    try:
+        SIGNAL_SETTLEMENT_JSON.parent.mkdir(parents=True, exist_ok=True)
+        SIGNAL_SETTLEMENT_JSON.write_text(
+            json.dumps(
+                {
+                    "mode": "FQIS_SIGNAL_SETTLEMENT_REPORT",
+                    "rows": [
+                        {
+                            "settlement_status": "SETTLED",
+                            "result_status": "WIN",
+                            "p_model": 0.75,
+                            "market": "Total Goals FT",
+                            "selection": "Over 2.5",
+                            "research_bucket": "STRICT_TOTALS_RESEARCH",
+                            "minute": 60,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        run_script("--output-json", str(tmp_path / "calibration.json"), "--output-md", str(tmp_path / "calibration.md"))
+
+        payload = json.loads((tmp_path / "calibration.json").read_text(encoding="utf-8"))
+        assert payload["status"] == "READY"
+        assert payload["input_source"] == "signal_settlement"
+        assert payload["source_files"]["calibration_input"] == str(SIGNAL_SETTLEMENT_JSON)
+        assert payload["eligible_settled_rows"] == 1
+        assert "SIGNAL_SETTLEMENT_MISSING_USING_RESEARCH_SETTLEMENT_FALLBACK" not in payload["warning_flags"]
+    finally:
+        if original is None:
+            SIGNAL_SETTLEMENT_JSON.unlink(missing_ok=True)
+        else:
+            SIGNAL_SETTLEMENT_JSON.write_text(original, encoding="utf-8")
+
+
+def test_calibration_audit_falls_back_to_research_settlement_with_warning(tmp_path: Path):
+    spec = importlib.util.spec_from_file_location("fqis_calibration_audit_report_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    fallback = tmp_path / "research_settlement.json"
+    fallback.write_text(
+        json.dumps(
+            {
+                "rows": [
+                    {
+                        "settlement_status": "SETTLED",
+                        "result_status": "LOSS",
+                        "p_model": 0.25,
+                        "market": "Total Goals FT",
+                        "selection": "Under 2.5",
+                        "research_bucket": "STRICT_TOTALS_RESEARCH",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    module.SIGNAL_SETTLEMENT_JSON = tmp_path / "missing_signal_settlement.json"
+    module.SETTLEMENT_JSON = fallback
+
+    payload = module.build_report()
+
+    assert payload["status"] == "READY"
+    assert payload["input_source"] == "research_settlement_fallback"
+    assert payload["source_files"]["calibration_input"] == str(fallback)
+    assert "SIGNAL_SETTLEMENT_MISSING_USING_RESEARCH_SETTLEMENT_FALLBACK" in payload["warning_flags"]
