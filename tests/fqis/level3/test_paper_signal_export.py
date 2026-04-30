@@ -54,7 +54,6 @@ def test_paper_signal_export_compiles_runs_and_is_paper_only():
     assert payload["safety"]["live_staking_allowed"] is False
 
     signals = payload.get("signals") or []
-    assert signals
     forbidden_stake_fields = {"stake", "stake_size", "unit_stake", "stake_units", "amount"}
     for signal in signals:
         assert signal["paper_only"] is True

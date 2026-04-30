@@ -43,6 +43,7 @@ REPORT_PATHS = {
     "go_no_go": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_go_no_go_report.json",
     "shadow_readiness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_readiness_report.json",
     "live_freshness": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_freshness_report.json",
+    "live_opportunity_scanner": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_opportunity_scanner.json",
     "paper_signal_export": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_signal_export.json",
     "paper_alert_dedupe": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_dedupe.json",
     "paper_alert_ranker": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_paper_alert_ranker.json",
@@ -229,6 +230,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     shadow_post = shadow.get("post_quarantine") or {}
     freshness = reports.get("live_freshness", {})
     freshness_flags = freshness.get("freshness_flags") or []
+    scanner = reports.get("live_opportunity_scanner", {})
     paper_export = reports.get("paper_signal_export", {})
     paper_dedupe = reports.get("paper_alert_dedupe", {})
     paper_ranker = reports.get("paper_alert_ranker", {})
@@ -300,6 +302,23 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Ledger rows total: **{freshness.get('ledger_rows_total', 0)}**",
         f"- Freshness flags: **{', '.join(str(flag) for flag in freshness_flags) if freshness_flags else 'NONE'}**",
         f"- Historical static review: **{', '.join(str(flag) for flag in freshness.get('historical_metric_static_review') or []) or 'NONE'}**",
+        "",
+        "## Live Opportunity Scanner",
+        "",
+        f"- Status: **{scanner.get('status', 'UNKNOWN')}**",
+        f"- Operator read: **{scanner.get('operator_read', 'UNKNOWN_REVIEW')}**",
+        f"- Live fixtures seen: **{scanner.get('live_fixtures_seen', 0)}**",
+        f"- Groups total / priced: **{scanner.get('groups_total', 0)} / {scanner.get('groups_priced', 0)}**",
+        f"- Decisions total: **{scanner.get('decisions_total', 0)}**",
+        f"- Official / watchlist / blocked: **{scanner.get('official_decisions', 0)} / {scanner.get('watchlist_decisions', 0)} / {scanner.get('blocked_decisions', 0)}**",
+        f"- Candidates this cycle: **{scanner.get('candidates_this_cycle', 0)}**",
+        f"- New snapshots appended: **{scanner.get('new_snapshots_appended', 0)}**",
+        f"- Level 3 state/trade ready: **{scanner.get('level3_state_ready_count', 0)} / {scanner.get('level3_trade_ready_count', 0)}**",
+        f"- Level 3 events/stats available: **{scanner.get('level3_events_available_count', 0)} / {scanner.get('level3_stats_available_count', 0)}**",
+        f"- Score-only decisions: **{scanner.get('score_only_decisions', 0)}**",
+        f"- Rejected non-positive edge/EV: **{scanner.get('rejected_by_non_positive_edge_ev', 0)}**",
+        f"- Rejected timing/data/final/negative-veto: **{scanner.get('rejected_by_timing_policy', 0)} / {scanner.get('rejected_by_data_tier', 0)} / {scanner.get('rejected_by_final_status', 0)} / {scanner.get('rejected_by_negative_value_veto', 0)}**",
+        f"- Safety flags false: **{scanner.get('can_execute_real_bets', False) is False and scanner.get('can_enable_live_staking', False) is False and scanner.get('can_mutate_ledger', False) is False and scanner.get('live_staking_allowed', False) is False and scanner.get('promotion_allowed', False) is False}**",
         "",
         "## Paper Signal Export",
         "",
@@ -783,6 +802,7 @@ def main() -> int:
         exclude={
             "shadow_readiness",
             "live_freshness",
+            "live_opportunity_scanner",
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
@@ -799,6 +819,7 @@ def main() -> int:
     reports, ledger_restore, status, payload = write_stage(
         exclude={
             "live_freshness",
+            "live_opportunity_scanner",
             "paper_signal_export",
             "paper_alert_dedupe",
             "paper_alert_ranker",
@@ -811,6 +832,27 @@ def main() -> int:
 
     freshness_label, freshness_script = scripts[16]
     steps.append(run_step(freshness_label, [CHILD_PYTHON, str(ROOT / "scripts" / freshness_script)], run_dir))
+
+    reports, ledger_restore, status, payload = write_stage(
+        exclude={
+            "live_opportunity_scanner",
+            "paper_signal_export",
+            "paper_alert_dedupe",
+            "paper_alert_ranker",
+            "operator_paper_decision_sheet",
+            "discord_paper_payload",
+            "operator_shadow_console",
+            "shadow_session_quality",
+        }
+    )
+
+    steps.append(
+        run_step(
+            "18b_live_opportunity_scanner",
+            [CHILD_PYTHON, str(ROOT / "scripts" / "fqis_live_opportunity_scanner.py")],
+            run_dir,
+        )
+    )
 
     reports, ledger_restore, status, payload = write_stage(
         exclude={
@@ -879,6 +921,7 @@ def main() -> int:
     go_no_go = reports.get("go_no_go") or {}
     shadow = reports.get("shadow_readiness") or {}
     freshness = reports.get("live_freshness") or {}
+    scanner = reports.get("live_opportunity_scanner") or {}
     operator_console = reports.get("operator_shadow_console") or {}
     paper_export = reports.get("paper_signal_export") or {}
     paper_dedupe = reports.get("paper_alert_dedupe") or {}
@@ -892,6 +935,7 @@ def main() -> int:
         "promotion_allowed": verdict.get("promotion_allowed"),
         "shadow_state": shadow.get("shadow_state"),
         "live_freshness_status": freshness.get("status"),
+        "live_opportunity_read": scanner.get("operator_read"),
         "operator_state": operator_console.get("operator_state"),
         "paper_signals_total": paper_export.get("paper_signals_total") or paper_export.get("total_decisions"),
         "top_ranked_alert_count": paper_ranker.get("top_ranked_alert_count") or paper_ranker.get("ranked_alert_count"),
