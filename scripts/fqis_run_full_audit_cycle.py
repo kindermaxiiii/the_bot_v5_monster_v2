@@ -56,6 +56,7 @@ REPORT_PATHS = {
     "discord_paper_payload": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_discord_paper_payload.json",
     "operator_shadow_console": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.json",
     "shadow_session_quality": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_session_quality_report.json",
+    "final_operator_readiness_dashboard": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_final_operator_readiness_dashboard.json",
 }
 
 
@@ -164,6 +165,7 @@ def build_payload(
     signal_settlement = reports.get("signal_settlement") or {}
     calibration = reports.get("calibration") or {}
     promotion_policy = reports.get("promotion_policy") or {}
+    final_operator_dashboard = reports.get("final_operator_readiness_dashboard") or {}
     return {
         "mode": "FQIS_FULL_CYCLE_ORCHESTRATOR",
         "status": status,
@@ -178,6 +180,9 @@ def build_payload(
         "calibration_status": calibration.get("status"),
         "promotion_policy_status": promotion_policy.get("status"),
         "promotion_policy_verdict": promotion_policy.get("final_verdict"),
+        "final_operator_readiness_status": final_operator_dashboard.get("status"),
+        "final_operator_readiness_level": final_operator_dashboard.get("readiness_level"),
+        "final_operator_readiness_score": final_operator_dashboard.get("readiness_score_0_100"),
         "invariants": {
             "research_candidates_ledger_preserved": ledger_restore["preserved"],
             "research_candidates_ledger": ledger_restore,
@@ -260,6 +265,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     discord_payload = reports.get("discord_paper_payload", {})
     operator_console = reports.get("operator_shadow_console", {})
     shadow_session_quality = reports.get("shadow_session_quality", {})
+    final_operator_dashboard = reports.get("final_operator_readiness_dashboard", {})
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -456,6 +462,17 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Material updates: **{shadow_session_quality.get('total_material_updates', 0)}**",
         f"- Alert noise ratio: **{shadow_session_quality.get('alert_noise_ratio', 0)}**",
         f"- Recommended next action: **{shadow_session_quality.get('recommended_next_action', 'RUN_SHADOW_MONITOR')}**",
+        "",
+        "## Final Operator Readiness Dashboard",
+        "",
+        f"- Status: **{final_operator_dashboard.get('status', 'UNKNOWN')}**",
+        f"- Readiness level: **{final_operator_dashboard.get('readiness_level', 'UNKNOWN')}**",
+        f"- Readiness score: **{final_operator_dashboard.get('readiness_score_0_100', 0)} / 100**",
+        f"- Hard blockers: **{len(final_operator_dashboard.get('hard_blockers') or [])}**",
+        f"- Soft blockers: **{len(final_operator_dashboard.get('soft_blockers') or [])}**",
+        f"- Paper only: **{final_operator_dashboard.get('paper_only', True)}**",
+        f"- Live execution enabled: **{final_operator_dashboard.get('live_execution_enabled', False)}**",
+        f"- Promotion allowed: **{final_operator_dashboard.get('promotion_allowed', False)}**",
         "",
         "## Final Verdict",
         "",
@@ -850,12 +867,16 @@ def main() -> int:
         ("23_discord_paper_payload", "fqis_discord_paper_payload.py"),
         ("24_operator_shadow_console", "fqis_operator_shadow_console.py"),
         ("25_shadow_session_quality_report", "fqis_shadow_session_quality_report.py"),
+        ("26_final_operator_readiness_dashboard", "fqis_final_operator_readiness_dashboard.py"),
     ]
 
     generated_at_utc = utc_now()
 
     def write_stage(exclude: set[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, Any]]:
-        stage_reports = read_reports(exclude=exclude)
+        excluded = set(exclude or set())
+        if not any(step.get("label") == "26_final_operator_readiness_dashboard" for step in steps):
+            excluded.add("final_operator_readiness_dashboard")
+        stage_reports = read_reports(exclude=excluded)
         stage_ledger_restore = restore_file(ledger_snapshot)
         stage_status = cycle_status(steps, stage_ledger_restore)
         stage_payload = build_payload(
@@ -1076,6 +1097,11 @@ def main() -> int:
     steps.append(run_step(quality_label, [CHILD_PYTHON, str(ROOT / "scripts" / quality_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
+
+    readiness_label, readiness_script = scripts[30]
+    steps.append(run_step(readiness_label, [CHILD_PYTHON, str(ROOT / "scripts" / readiness_script)], run_dir))
+
+    reports, ledger_restore, status, payload = write_stage()
     write_master_report(payload)
 
     verdict = ((reports.get("daily_audit") or {}).get("verdict") or {})
@@ -1092,6 +1118,7 @@ def main() -> int:
     calibration = reports.get("calibration") or {}
     promotion_policy = reports.get("promotion_policy") or {}
     discord_payload = reports.get("discord_paper_payload") or {}
+    final_operator_dashboard = reports.get("final_operator_readiness_dashboard") or {}
 
     print(json.dumps({
         "status": status,
@@ -1111,6 +1138,9 @@ def main() -> int:
         "calibration_status": calibration.get("status"),
         "promotion_policy_status": promotion_policy.get("status"),
         "promotion_policy_verdict": promotion_policy.get("final_verdict"),
+        "final_operator_readiness_status": final_operator_dashboard.get("status"),
+        "final_operator_readiness_level": final_operator_dashboard.get("readiness_level"),
+        "final_operator_readiness_score": final_operator_dashboard.get("readiness_score_0_100"),
         "new_paper_alerts": paper_dedupe.get("new_alerts"),
         "sendable_discord_payload": discord_payload.get("sendable"),
         "run_dir": str(run_dir),

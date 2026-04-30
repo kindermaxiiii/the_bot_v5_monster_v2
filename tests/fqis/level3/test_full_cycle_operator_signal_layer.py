@@ -46,6 +46,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "23_discord_paper_payload",
         "24_operator_shadow_console",
         "25_shadow_session_quality_report",
+        "26_final_operator_readiness_dashboard",
     ]:
         assert labels.count(label) == 1
 
@@ -63,6 +64,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "## Discord Paper Payload",
         "## Operator Shadow Console",
         "## Shadow Session Quality",
+        "## Final Operator Readiness Dashboard",
     ]:
         assert report.count(section) == 1
 
@@ -79,6 +81,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "discord_paper_payload",
         "operator_shadow_console",
         "shadow_session_quality",
+        "final_operator_readiness_dashboard",
     ]:
         assert name in reports
     assert reports["paper_alert_ranker"]["can_execute_real_bets"] is False
@@ -122,3 +125,8 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "SESSION_BLOCKED",
         "NO_MONITOR_SESSION_AVAILABLE",
     }
+    assert reports["final_operator_readiness_dashboard"]["can_execute_real_bets"] is False
+    assert reports["final_operator_readiness_dashboard"]["can_enable_live_staking"] is False
+    assert reports["final_operator_readiness_dashboard"]["can_mutate_ledger"] is False
+    assert reports["final_operator_readiness_dashboard"]["promotion_allowed"] is False
+    assert reports["final_operator_readiness_dashboard"]["live_execution_enabled"] is False
