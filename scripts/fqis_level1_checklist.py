@@ -40,7 +40,7 @@ def main() -> int:
         write_level1_operator_checklist_json(report, Path(args.output_path))
 
     if args.json:
-        print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(record, ensure_ascii=True, sort_keys=True))
     else:
         print(
             "fqis_level1_operator_checklist "

@@ -232,7 +232,7 @@ def main() -> int:
         "fixture_pnl": payload["fixture"]["pnl_unit"],
         "fixture_settled": payload["fixture"]["settled"],
         "fixture_roi": payload["fixture"]["roi_unit"],
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0
 

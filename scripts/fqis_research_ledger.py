@@ -571,7 +571,7 @@ def main() -> int:
         **schema_report,
         "ledger_csv": str(LEDGER_CSV),
         "latest_md": str(LATEST_MD),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0
 

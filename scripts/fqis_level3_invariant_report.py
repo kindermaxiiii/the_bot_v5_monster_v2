@@ -74,7 +74,7 @@ def main() -> int:
         },
     }
 
-    print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(report, indent=2, ensure_ascii=True, sort_keys=True))
 
     ok = all(report["invariants"].values())
     return 0 if ok else 2

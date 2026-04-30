@@ -532,17 +532,17 @@ def main() -> int:
         )
         write_outputs(payload)
         if args.quiet:
-            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(payload, ensure_ascii=True, sort_keys=True))
         else:
-            print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
         return 130 if status == "MANUALLY_INTERRUPTED" else 2
 
     refresh_operator_console_after_monitor_write()
 
     if args.quiet:
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(payload, ensure_ascii=True, sort_keys=True))
     else:
-        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
     return 0 if status == "READY" else 2
 
 

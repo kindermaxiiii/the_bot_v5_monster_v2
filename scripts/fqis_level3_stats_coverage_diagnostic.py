@@ -460,7 +460,7 @@ def main() -> int:
         "can_execute_real_bets": payload["can_execute_real_bets"],
         "can_enable_live_staking": payload["can_enable_live_staking"],
         "can_mutate_ledger": payload["can_mutate_ledger"],
-    }, indent=2, ensure_ascii=False, sort_keys=True))
+    }, indent=2, ensure_ascii=True, sort_keys=True))
     return 0
 
 

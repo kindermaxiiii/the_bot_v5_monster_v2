@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.load:
             manifest = load_api_sports_release_manifest(args.load)
-            print(json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(manifest.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
             return 1 if args.require_ready and not manifest.release_ready else 0
 
         base_config = ApiSportsReleaseGateConfig.from_env()
@@ -64,11 +64,11 @@ def main(argv: list[str] | None = None) -> int:
                 include_git=not args.no_git,
             )
 
-        print(json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(manifest.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
         return 1 if args.require_ready and not manifest.release_ready else 0
 
     except ApiSportsReleaseManifestError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

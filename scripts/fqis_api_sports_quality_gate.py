@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {"status": "FAILED", "reason": f"Input path does not exist: {input_path}"},
                 indent=2,
-                ensure_ascii=False,
+                ensure_ascii=True,
             )
         )
         return 2
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
         report = evaluate_snapshot_quality_file(input_path, config=config)
     except ApiSportsQualityGateError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
     payload = report.to_dict()

@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             },
         }
 
-        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
         return 1 if args.require_ready and not release_pack.release_ready else 0
 
     except Exception as exc:
@@ -208,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                     "reason": str(exc),
                 },
                 indent=2,
-                ensure_ascii=False,
+                ensure_ascii=True,
                 sort_keys=True,
             )
         )

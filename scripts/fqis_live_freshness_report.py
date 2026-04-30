@@ -298,7 +298,7 @@ def write_outputs(payload: dict[str, Any]) -> None:
 def main() -> int:
     payload = build_payload()
     write_outputs(payload)
-    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
     return 2 if payload["status"] == "MISSING_INPUTS" else 0
 
 

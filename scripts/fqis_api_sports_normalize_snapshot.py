@@ -89,13 +89,13 @@ def main() -> int:
                 report["summary"][key] += int(batch.summary.get(key, 0))  # type: ignore[index]
 
         report["status"] = "COMPLETED"
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(json.dumps(report, indent=2, ensure_ascii=True))
         return 0
     except (ApiSportsNormalizationError, OSError, json.JSONDecodeError) as exc:
         report["status"] = "FAILED"
         report["error_type"] = type(exc).__name__
         report["error"] = str(exc)
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(json.dumps(report, indent=2, ensure_ascii=True))
         return 1
 
 

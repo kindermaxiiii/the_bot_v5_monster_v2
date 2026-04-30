@@ -340,7 +340,7 @@ def main() -> int:
         "match_rows": payload["summary"]["match"]["rows"],
         "signal_roi": payload["summary"]["signal"]["roi_unit"],
         "signal_pnl": payload["summary"]["signal"]["pnl_unit"],
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0
 

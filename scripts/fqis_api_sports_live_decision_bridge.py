@@ -1063,7 +1063,7 @@ def run_cycle(args: argparse.Namespace, seen: set[str]) -> dict[str, Any]:
         "status": payload["status"],
         "cycle_dir": str(cycle_dir),
         "summary": payload["summary"],
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return payload
 
@@ -1154,6 +1154,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-

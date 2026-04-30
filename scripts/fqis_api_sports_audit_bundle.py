@@ -48,11 +48,11 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
         )
 
-        print(json.dumps(bundle.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(bundle.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
         return 1 if args.require_ready and not bundle.ready else 0
 
     except (ApiSportsAuditBundleError, ApiSportsRunLedgerError, ApiSportsRunRegistryError) as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

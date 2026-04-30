@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(
                         {"status": "FAILED", "reason": f"Manifest path does not exist: {manifest_path}"},
                         indent=2,
-                        ensure_ascii=False,
+                        ensure_ascii=True,
                     )
                 )
                 return 2
@@ -64,11 +64,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.summary or not args.manifest:
             output["summary"] = summarize_run_ledger(ledger_path).to_dict()
 
-        print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(output, indent=2, ensure_ascii=True, sort_keys=True))
         return 0
 
     except ApiSportsRunLedgerError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

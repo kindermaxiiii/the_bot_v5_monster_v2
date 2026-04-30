@@ -959,7 +959,7 @@ def main() -> int:
         "run_dir": str(run_dir),
         "latest_md": str(LATEST_MD),
         "latest_json": str(LATEST_JSON),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0 if status == "READY" else 2
 
@@ -980,4 +980,3 @@ if __name__ == "__main__":
     inject_research_screening_diagnostics_into_latest_full_cycle_report()
     inject_fixture_level_research_into_latest_full_cycle_report()
     raise SystemExit(exit_code)
-

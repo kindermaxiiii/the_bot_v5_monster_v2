@@ -51,11 +51,11 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
         )
 
-        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
         return 1 if args.require_ready and not result.ready else 0
 
     except ApiSportsInplayLiveOddsCandidatesError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
                 "entry": entry.to_dict() if entry else None,
                 "snapshot": registry.snapshot().to_dict(),
             }
-            print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
             return 1 if args.require and entry is None else 0
 
         if args.list:
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 "entries": [entry.to_dict() for entry in entries],
                 "snapshot": registry.snapshot().to_dict(),
             }
-            print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
             return 0
 
         selection = registry.select_latest(
@@ -81,11 +81,11 @@ def main(argv: list[str] | None = None) -> int:
         payload = selection.to_dict()
         payload["snapshot"] = registry.snapshot().to_dict()
 
-        print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
         return 1 if args.require and selection.entry is None else 0
 
     except (ApiSportsRunRegistryError, ApiSportsRunLedgerError) as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

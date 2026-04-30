@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if args.require_ready and report.status != "READY" else 0
 
     except ApiSportsPaperReportError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
             require_audit_bundle=require_audit_bundle,
         )
 
-    print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(report.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
     return 1 if args.require_ready and not report.ready else 0
 
 

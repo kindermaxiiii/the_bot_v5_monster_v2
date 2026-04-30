@@ -373,7 +373,7 @@ def main() -> int:
         "positive_trade_ready": len(positive_trade_ready),
         "true_near_pass": len(true_near_pass),
         "market_research": len(market_research),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0
 

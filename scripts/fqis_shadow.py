@@ -51,7 +51,7 @@ def main() -> int:
             profile_name=args.profile,
             profile_path=profile_path,
         )
-        print(json.dumps(shadow_production_profile_to_record(profile), ensure_ascii=False, sort_keys=True))
+        print(json.dumps(shadow_production_profile_to_record(profile), ensure_ascii=True, sort_keys=True))
         return 0
 
     outcome = run_monitored_shadow_runner(
@@ -69,7 +69,7 @@ def main() -> int:
     record = monitored_shadow_runner_outcome_to_record(outcome)
 
     if args.json:
-        print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(record, ensure_ascii=True, sort_keys=True))
     elif outcome.runner_outcome is not None:
         headline = record["runner_outcome"]["headline"]
         print(

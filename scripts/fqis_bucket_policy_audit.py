@@ -54,10 +54,9 @@ def main() -> int:
     }
 
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    print(json.dumps(out, indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(out, indent=2, ensure_ascii=True, sort_keys=True))
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

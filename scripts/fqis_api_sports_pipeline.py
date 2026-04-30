@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     manifest = runner.run()
-    print(json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps(manifest.to_dict(), ensure_ascii=True, indent=2, sort_keys=True))
 
     return 1 if manifest.status is ApiSportsPipelineStatus.FAILED else 0
 

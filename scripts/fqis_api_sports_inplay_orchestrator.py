@@ -176,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     paths["summary_md"].write_text(render_inplay_orchestrator_markdown(summary), encoding="utf-8")
 
-    print(json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(summary, indent=2, ensure_ascii=True, sort_keys=True))
     print(render_inplay_orchestrator_markdown(summary))
 
     ready = bool(summary["ready"])

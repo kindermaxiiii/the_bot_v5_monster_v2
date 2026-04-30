@@ -43,7 +43,7 @@ def main() -> int:
     try:
         config = ApiSportsConfig.from_env(require_key=True)
     except ApiSportsConfigError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
     client = ApiSportsClient(config)
@@ -95,14 +95,14 @@ def main() -> int:
             }
 
         report["status"] = "COMPLETED"
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(json.dumps(report, indent=2, ensure_ascii=True))
         return 0
 
     except Exception as exc:
         report["status"] = "FAILED"
         report["error_type"] = type(exc).__name__
         report["error"] = str(exc)
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(json.dumps(report, indent=2, ensure_ascii=True))
         return 1
 
 

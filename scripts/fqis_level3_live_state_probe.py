@@ -574,7 +574,7 @@ def main() -> int:
         "source_run_dir": payload["source_run_dir"],
         "summary": payload["summary"],
         "output": str(output_dir / "latest_level3_live_state.md"),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0
 

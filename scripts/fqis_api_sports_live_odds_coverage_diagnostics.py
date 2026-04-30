@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             markdown.parent.mkdir(parents=True, exist_ok=True)
             markdown.write_text(render_api_sports_live_odds_coverage_diagnostics_markdown(result), encoding="utf-8")
 
-        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
 
         if args.markdown:
             print(render_api_sports_live_odds_coverage_diagnostics_markdown(result))
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if args.require_ready and not result.ready else 0
 
     except ApiSportsLiveOddsCoverageDiagnosticsError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

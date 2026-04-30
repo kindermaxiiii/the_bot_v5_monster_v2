@@ -66,18 +66,18 @@ def main(argv: list[str] | None = None) -> int:
                 "index": index.to_dict(),
             }
 
-            print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+            print(json.dumps(payload, indent=2, ensure_ascii=True, sort_keys=True))
             return 1 if args.require and entry is None else 0
 
         index = write_api_sports_audit_index(
             bundle_dir=args.bundle_dir,
             output_path=args.output,
         )
-        print(json.dumps(index.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(index.to_dict(), indent=2, ensure_ascii=True, sort_keys=True))
         return 0
 
     except ApiSportsAuditIndexError as exc:
-        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=False))
+        print(json.dumps({"status": "FAILED", "reason": str(exc)}, indent=2, ensure_ascii=True))
         return 2
 
 

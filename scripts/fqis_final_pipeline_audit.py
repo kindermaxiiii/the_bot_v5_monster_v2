@@ -36,7 +36,7 @@ def main() -> int:
     }
 
     OUT_JSON.write_text(json.dumps(audit, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    print(json.dumps(audit, indent=2, ensure_ascii=False, sort_keys=True))
+    print(json.dumps(audit, indent=2, ensure_ascii=True, sort_keys=True))
     return 0 if staking_true == 0 else 2
 
 

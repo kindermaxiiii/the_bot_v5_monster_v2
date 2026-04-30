@@ -337,7 +337,7 @@ def main() -> int:
         "warning_count": warning_count,
         "output_md": str(OUT_MD),
         "output_json": str(OUT_JSON),
-    }, indent=2, ensure_ascii=False))
+    }, indent=2, ensure_ascii=True))
 
     return 0 if critical_count == 0 else 1
 
