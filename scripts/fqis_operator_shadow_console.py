@@ -14,6 +14,7 @@ GO_NO_GO_JSON = ORCH_DIR / "latest_go_no_go_report.json"
 SHADOW_READINESS_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
 LIVE_FRESHNESS_JSON = ORCH_DIR / "latest_live_freshness_report.json"
 LIVE_OPPORTUNITY_SCANNER_JSON = ORCH_DIR / "latest_live_opportunity_scanner.json"
+LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON = ORCH_DIR / "latest_level3_stats_coverage_diagnostic.json"
 PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_DEDUPE_JSON = ORCH_DIR / "latest_paper_alert_dedupe.json"
 PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
@@ -55,6 +56,15 @@ LIVE_OPPORTUNITY_SCANNER_FIELDS = (
     "live_staking_allowed",
     "promotion_allowed",
     "read",
+)
+LEVEL3_STATS_COVERAGE_DIAGNOSTIC_FIELDS = (
+    "fixtures_seen",
+    "events_available",
+    "raw_stats_available",
+    "parsed_stats_available",
+    "events_only_no_stats",
+    "stats_parser_empty",
+    "stats_endpoint_missing",
 )
 
 
@@ -107,6 +117,15 @@ def find_true_flags(payload: Any, names: set[str], prefix: str = "") -> list[str
 
 def safe_bool(*values: Any) -> bool:
     return any(truthy_flag(value) for value in values)
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(str(value).replace(",", "").strip()))
+    except Exception:
+        return default
 
 
 def monitor_section(monitor: dict[str, Any], full_cycle: dict[str, Any], operator_generated_at_utc: str) -> dict[str, Any]:
@@ -186,6 +205,43 @@ def live_opportunity_scanner_section(scanner: dict[str, Any]) -> dict[str, Any]:
     return section
 
 
+def top_reason_counts(reason_counts: Any, limit: int = 5) -> list[dict[str, Any]]:
+    items: list[tuple[str, int]] = []
+    if isinstance(reason_counts, dict):
+        items = [(str(reason), safe_int(count)) for reason, count in reason_counts.items()]
+    elif isinstance(reason_counts, list):
+        for item in reason_counts:
+            if isinstance(item, dict):
+                items.append((str(item.get("reason") or item.get("name") or ""), safe_int(item.get("count"))))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                items.append((str(item[0]), safe_int(item[1])))
+    items = [(reason, count) for reason, count in items if reason]
+    items.sort(key=lambda item: (-item[1], item[0]))
+    return [{"reason": reason, "count": count} for reason, count in items[:limit]]
+
+
+def level3_stats_coverage_diagnostic_section(diagnostic: dict[str, Any]) -> dict[str, Any]:
+    summary = diagnostic.get("summary") or {}
+    status = diagnostic.get("status")
+    if not status and diagnostic.get("missing"):
+        status = "MISSING"
+    if not status and diagnostic.get("error"):
+        status = "ERROR"
+
+    section = {"status": status}
+    for field in LEVEL3_STATS_COVERAGE_DIAGNOSTIC_FIELDS:
+        section[field] = safe_int(summary.get(field))
+    section["reason_counts"] = top_reason_counts(summary.get("reason_counts"), limit=5)
+
+    if diagnostic.get("missing"):
+        section["missing"] = True
+        section["path"] = diagnostic.get("path")
+    if diagnostic.get("error"):
+        section["error"] = diagnostic.get("error")
+        section["path"] = diagnostic.get("path")
+    return section
+
+
 def build_payload() -> dict[str, Any]:
     generated_at_utc = utc_now()
     full_cycle = read_json(FULL_CYCLE_JSON)
@@ -194,6 +250,7 @@ def build_payload() -> dict[str, Any]:
     shadow = read_json(SHADOW_READINESS_JSON)
     freshness = read_json(LIVE_FRESHNESS_JSON)
     live_opportunity_scanner = read_json(LIVE_OPPORTUNITY_SCANNER_JSON)
+    level3_stats_coverage_diagnostic = read_json(LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON)
     paper_export = read_json(PAPER_SIGNAL_EXPORT_JSON)
     dedupe = read_json(PAPER_ALERT_DEDUPE_JSON)
     ranker = read_json(PAPER_ALERT_RANKER_JSON)
@@ -407,6 +464,7 @@ def build_payload() -> dict[str, Any]:
         "paper_counts": paper_counts,
         "freshness": freshness_section,
         "live_opportunity_scanner": live_opportunity_scanner_section(live_opportunity_scanner),
+        "level3_stats_coverage_diagnostic": level3_stats_coverage_diagnostic_section(level3_stats_coverage_diagnostic),
         "paper_alert_ranker": {
             "status": ranker.get("status"),
             "ranked_alert_count": ranked_alert_count,
@@ -440,10 +498,22 @@ def safe_text(value: Any) -> str:
     return str(value or "").replace("\n", " ").strip()
 
 
+def render_reason_counts(reason_counts: Any) -> str:
+    if not reason_counts:
+        return "NONE"
+    parts = []
+    for item in reason_counts:
+        if not isinstance(item, dict):
+            continue
+        parts.append(f"{safe_text(item.get('reason'))}={safe_int(item.get('count'))}")
+    return "; ".join(parts) if parts else "NONE"
+
+
 def write_markdown(payload: dict[str, Any]) -> None:
     safety = payload.get("safety") or {}
     freshness = payload.get("freshness") or {}
     live_opportunity_scanner = payload.get("live_opportunity_scanner") or {}
+    level3_stats_coverage_diagnostic = payload.get("level3_stats_coverage_diagnostic") or {}
     paper_counts = payload.get("paper_counts") or {}
     discord = payload.get("discord") or {}
     monitor = payload.get("monitor") or {}
@@ -497,6 +567,18 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "",
         "### Top 3 Rejection Reasons",
         "",
+        "## Level 3 Stats Coverage Diagnostic",
+        "",
+        f"- status: **{level3_stats_coverage_diagnostic.get('status')}**",
+        f"- fixtures_seen: **{level3_stats_coverage_diagnostic.get('fixtures_seen')}**",
+        f"- events_available: **{level3_stats_coverage_diagnostic.get('events_available')}**",
+        f"- raw_stats_available: **{level3_stats_coverage_diagnostic.get('raw_stats_available')}**",
+        f"- parsed_stats_available: **{level3_stats_coverage_diagnostic.get('parsed_stats_available')}**",
+        f"- events_only_no_stats: **{level3_stats_coverage_diagnostic.get('events_only_no_stats')}**",
+        f"- stats_parser_empty: **{level3_stats_coverage_diagnostic.get('stats_parser_empty')}**",
+        f"- stats_endpoint_missing: **{level3_stats_coverage_diagnostic.get('stats_endpoint_missing')}**",
+        f"- reason_counts: **{render_reason_counts(level3_stats_coverage_diagnostic.get('reason_counts'))}**",
+        "",
         "## Paper Signals",
         "",
         f"- Total paper signals: **{paper_counts.get('total_paper_signals')}**",
@@ -544,11 +626,11 @@ def write_markdown(payload: dict[str, Any]) -> None:
     ]
     top_rejection_reasons = live_opportunity_scanner.get("top_rejection_reasons") or []
     if top_rejection_reasons:
-        insert_at = lines.index("## Paper Signals") - 1
+        insert_at = lines.index("## Level 3 Stats Coverage Diagnostic") - 1
         for item in reversed(top_rejection_reasons[:3]):
             lines.insert(insert_at, f"- {item.get('count', 0)}: {safe_text(item.get('reason'))}")
     else:
-        insert_at = lines.index("## Paper Signals") - 1
+        insert_at = lines.index("## Level 3 Stats Coverage Diagnostic") - 1
         lines.insert(insert_at, "- NONE")
     for reason in payload.get("reasons") or []:
         lines.append(f"- {safe_text(reason)}")

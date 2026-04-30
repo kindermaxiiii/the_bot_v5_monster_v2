@@ -18,6 +18,7 @@ OUT_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_
 OUT_MD = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.md"
 FRESHNESS_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_freshness_report.json"
 SCANNER_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_opportunity_scanner.json"
+LEVEL3_STATS_DIAG_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_level3_stats_coverage_diagnostic.json"
 LEDGER = ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "research_candidates_ledger.csv"
 SAFETY_FLAGS = [
     "can_execute_real_bets",
@@ -122,6 +123,52 @@ def write_controlled_scanner_fixture() -> None:
     )
 
 
+def controlled_level3_stats_diagnostic_fixture() -> dict:
+    payload = {
+        "mode": "FQIS_LEVEL3_STATS_COVERAGE_DIAGNOSTIC",
+        "status": "READY",
+        "generated_at_utc": "2026-04-30T00:00:00+00:00",
+        "diagnostic_only": True,
+        "summary": {
+            "fixtures_seen": 12,
+            "events_available": 9,
+            "raw_stats_available": 4,
+            "parsed_stats_available": 3,
+            "events_only_no_stats": 5,
+            "stats_parser_empty": 1,
+            "stats_endpoint_missing": 2,
+            "reason_counts": {
+                "STATS_ENDPOINT_MISSING": 7,
+                "PROVIDER_EVENTS_ONLY_NO_STATS": 6,
+                "STATS_RESPONSE_PRESENT_PARSER_EMPTY": 5,
+                "NO_EVENTS_NO_STATS": 4,
+                "STATS_AVAILABLE_TRADE_READY_ELIGIBLE": 3,
+                "EXTRA_REASON_SHOULD_NOT_RENDER": 2,
+            },
+        },
+        "read": {
+            "purpose": "DIAGNOSTIC_ONLY",
+            "decision_path_mutated": False,
+            "thresholds_changed": False,
+            "stake_sizing_performed": False,
+            "ledger_mutation_performed": False,
+            "bookmaker_execution_performed": False,
+        },
+        "safety": {},
+    }
+    for flag in SAFETY_FLAGS:
+        payload[flag] = False
+        payload["safety"][flag] = False
+    return payload
+
+
+def write_controlled_level3_stats_diagnostic_fixture() -> None:
+    LEVEL3_STATS_DIAG_JSON.write_text(
+        json.dumps(controlled_level3_stats_diagnostic_fixture(), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     py_compile.compile(str(SCRIPT), doraise=True)
 
@@ -132,14 +179,20 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     run_script(DISCORD_SCRIPT)
     before = sha256(LEDGER)
     scanner_original = SCANNER_JSON.read_text(encoding="utf-8") if SCANNER_JSON.exists() else None
+    diagnostic_original = LEVEL3_STATS_DIAG_JSON.read_text(encoding="utf-8") if LEVEL3_STATS_DIAG_JSON.exists() else None
     try:
         write_controlled_scanner_fixture()
+        write_controlled_level3_stats_diagnostic_fixture()
         run_script(SCRIPT)
     finally:
         if scanner_original is None:
             SCANNER_JSON.unlink(missing_ok=True)
         else:
             SCANNER_JSON.write_text(scanner_original, encoding="utf-8")
+        if diagnostic_original is None:
+            LEVEL3_STATS_DIAG_JSON.unlink(missing_ok=True)
+        else:
+            LEVEL3_STATS_DIAG_JSON.write_text(diagnostic_original, encoding="utf-8")
 
     assert sha256(LEDGER) == before
     payload = json.loads(OUT_JSON.read_text(encoding="utf-8"))
@@ -161,6 +214,18 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
         assert scanner[flag] is False
     assert scanner["read"]["ledger_mutation_performed"] is False
     assert scanner["read"]["bookmaker_execution_performed"] is False
+    diagnostic = payload["level3_stats_coverage_diagnostic"]
+    assert diagnostic["status"] == "READY"
+    assert diagnostic["fixtures_seen"] == 12
+    assert diagnostic["events_available"] == 9
+    assert diagnostic["raw_stats_available"] == 4
+    assert diagnostic["parsed_stats_available"] == 3
+    assert diagnostic["events_only_no_stats"] == 5
+    assert diagnostic["stats_parser_empty"] == 1
+    assert diagnostic["stats_endpoint_missing"] == 2
+    assert len(diagnostic["reason_counts"]) == 5
+    assert diagnostic["reason_counts"][0] == {"reason": "STATS_ENDPOINT_MISSING", "count": 7}
+    assert "EXTRA_REASON_SHOULD_NOT_RENDER" not in {item["reason"] for item in diagnostic["reason_counts"]}
     assert "monitor_artifact_generated_at_utc" in payload
     assert (payload.get("monitor") or {}).get("monitor_context") in {
         "NO_MONITOR_CONTEXT",
@@ -170,6 +235,11 @@ def test_operator_shadow_console_compiles_runs_and_never_live_ready():
     assert OUT_MD.exists()
     markdown = OUT_MD.read_text(encoding="utf-8")
     assert "Live Opportunity Scanner" in markdown
+    assert "## Level 3 Stats Coverage Diagnostic" in markdown
+    assert "- fixtures_seen: **12**" in markdown
+    assert "- events_available: **9**" in markdown
+    assert "STATS_ENDPOINT_MISSING=7" in markdown
+    assert "EXTRA_REASON_SHOULD_NOT_RENDER" not in markdown
     assert "EVENTS_ONLY_RESEARCH_NO_STATS" in markdown
 
 
