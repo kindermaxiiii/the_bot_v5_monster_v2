@@ -57,6 +57,7 @@ REPORT_PATHS = {
     "operator_shadow_console": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_operator_shadow_console.json",
     "shadow_session_quality": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_shadow_session_quality_report.json",
     "final_operator_readiness_dashboard": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_final_operator_readiness_dashboard.json",
+    "tonight_operator_launch": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_tonight_operator_launch.json",
 }
 
 
@@ -166,6 +167,7 @@ def build_payload(
     calibration = reports.get("calibration") or {}
     promotion_policy = reports.get("promotion_policy") or {}
     final_operator_dashboard = reports.get("final_operator_readiness_dashboard") or {}
+    tonight_operator_launch = reports.get("tonight_operator_launch") or {}
     return {
         "mode": "FQIS_FULL_CYCLE_ORCHESTRATOR",
         "status": status,
@@ -183,6 +185,9 @@ def build_payload(
         "final_operator_readiness_status": final_operator_dashboard.get("status"),
         "final_operator_readiness_level": final_operator_dashboard.get("readiness_level"),
         "final_operator_readiness_score": final_operator_dashboard.get("readiness_score_0_100"),
+        "tonight_operator_launch_status": tonight_operator_launch.get("status"),
+        "tonight_operator_launch_verdict": tonight_operator_launch.get("paper_session_verdict"),
+        "tonight_operator_launch_preview_html": tonight_operator_launch.get("preview_html"),
         "invariants": {
             "research_candidates_ledger_preserved": ledger_restore["preserved"],
             "research_candidates_ledger": ledger_restore,
@@ -266,6 +271,7 @@ def write_master_report(payload: dict[str, Any]) -> None:
     operator_console = reports.get("operator_shadow_console", {})
     shadow_session_quality = reports.get("shadow_session_quality", {})
     final_operator_dashboard = reports.get("final_operator_readiness_dashboard", {})
+    tonight_operator_launch = reports.get("tonight_operator_launch", {})
 
     lines = [
         "# FQIS Full Cycle Report",
@@ -473,6 +479,17 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Paper only: **{final_operator_dashboard.get('paper_only', True)}**",
         f"- Live execution enabled: **{final_operator_dashboard.get('live_execution_enabled', False)}**",
         f"- Promotion allowed: **{final_operator_dashboard.get('promotion_allowed', False)}**",
+        "",
+        "## Tonight Operator Launch",
+        "",
+        f"- Status: **{tonight_operator_launch.get('status', 'UNKNOWN')}**",
+        f"- Paper session verdict: **{tonight_operator_launch.get('paper_session_verdict', 'UNKNOWN')}**",
+        f"- Preview HTML: **{tonight_operator_launch.get('preview_html', 'UNKNOWN')}**",
+        f"- Can execute real bets: **{tonight_operator_launch.get('can_execute_real_bets', False)}**",
+        f"- Can enable live staking: **{tonight_operator_launch.get('can_enable_live_staking', False)}**",
+        f"- Can mutate ledger: **{tonight_operator_launch.get('can_mutate_ledger', False)}**",
+        f"- Live execution enabled: **{tonight_operator_launch.get('live_execution_enabled', False)}**",
+        f"- Promotion allowed: **{tonight_operator_launch.get('promotion_allowed', False)}**",
         "",
         "## Final Verdict",
         "",
@@ -868,6 +885,7 @@ def main() -> int:
         ("24_operator_shadow_console", "fqis_operator_shadow_console.py"),
         ("25_shadow_session_quality_report", "fqis_shadow_session_quality_report.py"),
         ("26_final_operator_readiness_dashboard", "fqis_final_operator_readiness_dashboard.py"),
+        ("27_tonight_operator_launch", "fqis_tonight_operator_launch.py"),
     ]
 
     generated_at_utc = utc_now()
@@ -876,6 +894,8 @@ def main() -> int:
         excluded = set(exclude or set())
         if not any(step.get("label") == "26_final_operator_readiness_dashboard" for step in steps):
             excluded.add("final_operator_readiness_dashboard")
+        if not any(step.get("label") == "27_tonight_operator_launch" for step in steps):
+            excluded.add("tonight_operator_launch")
         stage_reports = read_reports(exclude=excluded)
         stage_ledger_restore = restore_file(ledger_snapshot)
         stage_status = cycle_status(steps, stage_ledger_restore)
@@ -1102,6 +1122,17 @@ def main() -> int:
     steps.append(run_step(readiness_label, [CHILD_PYTHON, str(ROOT / "scripts" / readiness_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
+
+    launch_label, launch_script = scripts[31]
+    steps.append(
+        run_step(
+            launch_label,
+            [CHILD_PYTHON, str(ROOT / "scripts" / launch_script), "--skip-full-cycle"],
+            run_dir,
+        )
+    )
+
+    reports, ledger_restore, status, payload = write_stage()
     write_master_report(payload)
 
     verdict = ((reports.get("daily_audit") or {}).get("verdict") or {})
@@ -1119,6 +1150,7 @@ def main() -> int:
     promotion_policy = reports.get("promotion_policy") or {}
     discord_payload = reports.get("discord_paper_payload") or {}
     final_operator_dashboard = reports.get("final_operator_readiness_dashboard") or {}
+    tonight_operator_launch = reports.get("tonight_operator_launch") or {}
 
     print(json.dumps({
         "status": status,
@@ -1141,6 +1173,9 @@ def main() -> int:
         "final_operator_readiness_status": final_operator_dashboard.get("status"),
         "final_operator_readiness_level": final_operator_dashboard.get("readiness_level"),
         "final_operator_readiness_score": final_operator_dashboard.get("readiness_score_0_100"),
+        "tonight_operator_launch_status": tonight_operator_launch.get("status"),
+        "tonight_operator_launch_verdict": tonight_operator_launch.get("paper_session_verdict"),
+        "tonight_operator_launch_preview_html": tonight_operator_launch.get("preview_html"),
         "new_paper_alerts": paper_dedupe.get("new_alerts"),
         "sendable_discord_payload": discord_payload.get("sendable"),
         "run_dir": str(run_dir),

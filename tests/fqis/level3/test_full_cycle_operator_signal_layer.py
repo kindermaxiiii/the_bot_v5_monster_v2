@@ -47,6 +47,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "24_operator_shadow_console",
         "25_shadow_session_quality_report",
         "26_final_operator_readiness_dashboard",
+        "27_tonight_operator_launch",
     ]:
         assert labels.count(label) == 1
 
@@ -65,6 +66,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "## Operator Shadow Console",
         "## Shadow Session Quality",
         "## Final Operator Readiness Dashboard",
+        "## Tonight Operator Launch",
     ]:
         assert report.count(section) == 1
 
@@ -82,6 +84,7 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
         "operator_shadow_console",
         "shadow_session_quality",
         "final_operator_readiness_dashboard",
+        "tonight_operator_launch",
     ]:
         assert name in reports
     assert reports["paper_alert_ranker"]["can_execute_real_bets"] is False
@@ -130,3 +133,15 @@ def test_full_cycle_includes_operator_signal_layer_once_and_preserves_ledger():
     assert reports["final_operator_readiness_dashboard"]["can_mutate_ledger"] is False
     assert reports["final_operator_readiness_dashboard"]["promotion_allowed"] is False
     assert reports["final_operator_readiness_dashboard"]["live_execution_enabled"] is False
+    assert reports["tonight_operator_launch"]["can_execute_real_bets"] is False
+    assert reports["tonight_operator_launch"]["can_enable_live_staking"] is False
+    assert reports["tonight_operator_launch"]["can_mutate_ledger"] is False
+    assert reports["tonight_operator_launch"]["promotion_allowed"] is False
+    assert reports["tonight_operator_launch"]["live_execution_enabled"] is False
+    assert payload["tonight_operator_launch_status"] in {"READY", "REVIEW", "BLOCKED"}
+    assert payload["tonight_operator_launch_verdict"] in {
+        "READY_FOR_PAPER_SESSION",
+        "PAPER_SESSION_REVIEW",
+        "BLOCKED_FOR_PAPER_SESSION",
+    }
+    assert "latest_discord_alert_preview.html" in str(payload["tonight_operator_launch_preview_html"])
