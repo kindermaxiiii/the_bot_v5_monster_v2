@@ -15,6 +15,7 @@ OUT_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_
 OUT_MD = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_live_opportunity_scanner.md"
 FULL_CYCLE_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_full_cycle_report.json"
 FULL_CYCLE_MD = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_full_cycle_report.md"
+LEVEL3_STATS_DIAG_JSON = ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_level3_stats_coverage_diagnostic.json"
 
 SAFETY_FLAGS = [
     "can_execute_real_bets",
@@ -150,10 +151,16 @@ def test_full_cycle_includes_live_opportunity_scanner_once_and_preserves_ledger(
 
     reports = payload.get("reports") or {}
     assert "live_opportunity_scanner" in reports
+    assert "level3_stats_coverage_diagnostic" in reports
     scanner_report = reports["live_opportunity_scanner"]
+    stats_diag_report = reports["level3_stats_coverage_diagnostic"]
+    assert stats_diag_report["status"] == "READY"
+    assert "level3_stats_coverage_diagnostic" in scanner_report
     for flag in SAFETY_FLAGS:
         assert scanner_report[flag] is False
         assert scanner_report["safety"][flag] is False
 
+    assert LEVEL3_STATS_DIAG_JSON.exists()
     report = FULL_CYCLE_MD.read_text(encoding="utf-8")
     assert report.count("## Live Opportunity Scanner") == 1
+    assert report.count("## Level 3 Stats Coverage Diagnostic") == 1

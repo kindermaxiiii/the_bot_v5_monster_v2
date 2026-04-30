@@ -20,6 +20,7 @@ PAPER_SIGNAL_EXPORT_JSON = ORCH_DIR / "latest_paper_signal_export.json"
 PAPER_ALERT_RANKER_JSON = ORCH_DIR / "latest_paper_alert_ranker.json"
 GO_NO_GO_JSON = ORCH_DIR / "latest_go_no_go_report.json"
 SHADOW_READINESS_JSON = ORCH_DIR / "latest_shadow_readiness_report.json"
+LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON = ORCH_DIR / "latest_level3_stats_coverage_diagnostic.json"
 
 LIVE_DECISIONS_JSON = DECISION_DIR / "latest_live_decisions.json"
 OPERATOR_REPORT_JSON = DECISION_DIR / "latest_operator_report.json"
@@ -130,6 +131,20 @@ def reports_payload(full_cycle: dict[str, Any], name: str) -> dict[str, Any]:
 def summary(payload: dict[str, Any]) -> dict[str, Any]:
     value = payload.get("summary") or {}
     return value if isinstance(value, dict) else {}
+
+
+def compact_stats_coverage_diagnostic(payload: dict[str, Any]) -> dict[str, Any]:
+    diag_summary = summary(payload)
+    return {
+        "status": payload.get("status"),
+        "fixtures_seen": int_value(diag_summary.get("fixtures_seen")),
+        "events_available": int_value(diag_summary.get("events_available")),
+        "raw_stats_available": int_value(diag_summary.get("raw_stats_available")),
+        "parsed_stats_available": int_value(diag_summary.get("parsed_stats_available")),
+        "events_only_no_stats": int_value(diag_summary.get("events_only_no_stats")),
+        "stats_parser_empty": int_value(diag_summary.get("stats_parser_empty")),
+        "stats_endpoint_missing": int_value(diag_summary.get("stats_endpoint_missing")),
+    }
 
 
 def decisions_from(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -527,6 +542,7 @@ def build_payload() -> dict[str, Any]:
     final_pipeline_audit = read_json(FINAL_PIPELINE_AUDIT_JSON)
     level3_state = read_json(LEVEL3_STATE_JSON)
     research_candidates = read_json(RESEARCH_CANDIDATES_JSON)
+    level3_stats_coverage_diagnostic = read_json(LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON)
 
     inputs = {
         "latest_full_cycle_report": full_cycle,
@@ -593,6 +609,7 @@ def build_payload() -> dict[str, Any]:
         "generated_at_utc": generated_at_utc,
         "operator_read": operator_read,
         **metrics,
+        "level3_stats_coverage_diagnostic": compact_stats_coverage_diagnostic(level3_stats_coverage_diagnostic),
         "go_no_go_reasons": go_no_go_reasons,
         "freshness_flags": freshness_flags,
         "missing_inputs": missing_inputs,
@@ -611,6 +628,7 @@ def build_payload() -> dict[str, Any]:
             "latest_final_pipeline_audit": str(FINAL_PIPELINE_AUDIT_JSON),
             "latest_level3_live_state": str(LEVEL3_STATE_JSON),
             "latest_research_candidates": str(RESEARCH_CANDIDATES_JSON),
+            "latest_level3_stats_coverage_diagnostic": str(LEVEL3_STATS_COVERAGE_DIAGNOSTIC_JSON),
         },
         "read": {
             "purpose": "DIAGNOSTIC_ONLY",
@@ -654,6 +672,7 @@ def write_markdown(payload: dict[str, Any]) -> None:
         "freshness_flags",
         "go_no_go_reasons",
     ]
+    level3_stats_diag = payload.get("level3_stats_coverage_diagnostic") or {}
 
     lines = [
         "# FQIS Live Opportunity Scanner",
@@ -691,6 +710,17 @@ def write_markdown(payload: dict[str, Any]) -> None:
             "",
             *[f"- {safe_text(item)}" for item in payload.get("missing_inputs") or []],
         ]
+
+    lines += [
+        "",
+        "## Level 3 Stats Coverage Diagnostic",
+        "",
+        f"- Status: **{level3_stats_diag.get('status')}**",
+        f"- Fixtures/events/raw stats/parsed stats: **{level3_stats_diag.get('fixtures_seen', 0)} / {level3_stats_diag.get('events_available', 0)} / {level3_stats_diag.get('raw_stats_available', 0)} / {level3_stats_diag.get('parsed_stats_available', 0)}**",
+        f"- Events-only no stats: **{level3_stats_diag.get('events_only_no_stats', 0)}**",
+        f"- Stats parser empty: **{level3_stats_diag.get('stats_parser_empty', 0)}**",
+        f"- Stats endpoint missing: **{level3_stats_diag.get('stats_endpoint_missing', 0)}**",
+    ]
 
     OUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUT_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -34,6 +34,7 @@ REPORT_PATHS = {
     "clv_horizon": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_clv_horizon_audit.json",
     "research_performance": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_research_performance_report.json",
     "provider_coverage": ROOT / "data" / "pipeline" / "api_sports" / "provider_coverage" / "latest_provider_coverage_report.json",
+    "level3_stats_coverage_diagnostic": ROOT / "data" / "pipeline" / "api_sports" / "orchestrator" / "latest_level3_stats_coverage_diagnostic.json",
     "daily_audit": ROOT / "data" / "pipeline" / "api_sports" / "audit" / "latest_daily_audit_report.json",
     "final_pipeline_audit": ROOT / "data" / "pipeline" / "api_sports" / "decision_bridge_live" / "latest_final_pipeline_audit.json",
     "bucket_alpha_audit": ROOT / "data" / "pipeline" / "api_sports" / "research_ledger" / "latest_bucket_alpha_audit.json",
@@ -200,6 +201,8 @@ def write_master_report(payload: dict[str, Any]) -> None:
 
     provider = reports.get("provider_coverage", {})
     provider_summary = provider.get("summary") or {}
+    stats_diag = reports.get("level3_stats_coverage_diagnostic", {})
+    stats_diag_summary = stats_diag.get("summary") or {}
 
     clv = reports.get("clv_horizon", {})
     horizons = ((clv.get("summary") or {}).get("horizons") or {})
@@ -319,6 +322,17 @@ def write_master_report(payload: dict[str, Any]) -> None:
         f"- Rejected non-positive edge/EV: **{scanner.get('rejected_by_non_positive_edge_ev', 0)}**",
         f"- Rejected timing/data/final/negative-veto: **{scanner.get('rejected_by_timing_policy', 0)} / {scanner.get('rejected_by_data_tier', 0)} / {scanner.get('rejected_by_final_status', 0)} / {scanner.get('rejected_by_negative_value_veto', 0)}**",
         f"- Safety flags false: **{scanner.get('can_execute_real_bets', False) is False and scanner.get('can_enable_live_staking', False) is False and scanner.get('can_mutate_ledger', False) is False and scanner.get('live_staking_allowed', False) is False and scanner.get('promotion_allowed', False) is False}**",
+        "",
+        "## Level 3 Stats Coverage Diagnostic",
+        "",
+        f"- Status: **{stats_diag.get('status', 'UNKNOWN')}**",
+        f"- Fixtures seen: **{stats_diag_summary.get('fixtures_seen', 0)}**",
+        f"- Events available: **{stats_diag_summary.get('events_available', 0)}**",
+        f"- Raw stats available: **{stats_diag_summary.get('raw_stats_available', 0)}**",
+        f"- Parsed stats available: **{stats_diag_summary.get('parsed_stats_available', 0)}**",
+        f"- Events-only no stats: **{stats_diag_summary.get('events_only_no_stats', 0)}**",
+        f"- Stats parser empty: **{stats_diag_summary.get('stats_parser_empty', 0)}**",
+        f"- Stats endpoint missing: **{stats_diag_summary.get('stats_endpoint_missing', 0)}**",
         "",
         "## Paper Signal Export",
         "",
@@ -759,6 +773,7 @@ def main() -> int:
         ("06_research_performance", "fqis_research_performance_report.py"),
         ("07_operator_report", "fqis_operator_decision_report.py"),
         ("08_provider_coverage", "fqis_provider_coverage_report.py"),
+        ("08b_level3_stats_coverage_diagnostic", "fqis_level3_stats_coverage_diagnostic.py"),
         ("09_daily_audit", "fqis_daily_audit_report.py"),
         ("10_final_pipeline_audit", "fqis_final_pipeline_audit.py"),
         ("11_level3_invariant_report", "fqis_level3_invariant_report.py"),
@@ -795,7 +810,7 @@ def main() -> int:
         write_latest_payload(stage_payload)
         return stage_reports, stage_ledger_restore, stage_status, stage_payload
 
-    for label, script in scripts[:15]:
+    for label, script in scripts[:16]:
         steps.append(run_step(label, [CHILD_PYTHON, str(ROOT / "scripts" / script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -813,7 +828,7 @@ def main() -> int:
         }
     )
 
-    shadow_label, shadow_script = scripts[15]
+    shadow_label, shadow_script = scripts[16]
     steps.append(run_step(shadow_label, [CHILD_PYTHON, str(ROOT / "scripts" / shadow_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -830,7 +845,7 @@ def main() -> int:
         }
     )
 
-    freshness_label, freshness_script = scripts[16]
+    freshness_label, freshness_script = scripts[17]
     steps.append(run_step(freshness_label, [CHILD_PYTHON, str(ROOT / "scripts" / freshness_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage(
@@ -866,7 +881,7 @@ def main() -> int:
         }
     )
 
-    paper_label, paper_script = scripts[17]
+    paper_label, paper_script = scripts[18]
     steps.append(run_step(paper_label, [CHILD_PYTHON, str(ROOT / "scripts" / paper_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={
@@ -879,7 +894,7 @@ def main() -> int:
         }
     )
 
-    dedupe_label, dedupe_script = scripts[18]
+    dedupe_label, dedupe_script = scripts[19]
     steps.append(run_step(dedupe_label, [CHILD_PYTHON, str(ROOT / "scripts" / dedupe_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={
@@ -891,27 +906,27 @@ def main() -> int:
         }
     )
 
-    ranker_label, ranker_script = scripts[19]
+    ranker_label, ranker_script = scripts[20]
     steps.append(run_step(ranker_label, [CHILD_PYTHON, str(ROOT / "scripts" / ranker_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={"operator_paper_decision_sheet", "discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
-    sheet_label, sheet_script = scripts[20]
+    sheet_label, sheet_script = scripts[21]
     steps.append(run_step(sheet_label, [CHILD_PYTHON, str(ROOT / "scripts" / sheet_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(
         exclude={"discord_paper_payload", "operator_shadow_console", "shadow_session_quality"}
     )
 
-    discord_label, discord_script = scripts[21]
+    discord_label, discord_script = scripts[22]
     steps.append(run_step(discord_label, [CHILD_PYTHON, str(ROOT / "scripts" / discord_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(exclude={"operator_shadow_console", "shadow_session_quality"})
 
-    operator_label, operator_script = scripts[22]
+    operator_label, operator_script = scripts[23]
     steps.append(run_step(operator_label, [CHILD_PYTHON, str(ROOT / "scripts" / operator_script)], run_dir))
     reports, ledger_restore, status, payload = write_stage(exclude={"shadow_session_quality"})
 
-    quality_label, quality_script = scripts[23]
+    quality_label, quality_script = scripts[24]
     steps.append(run_step(quality_label, [CHILD_PYTHON, str(ROOT / "scripts" / quality_script)], run_dir))
 
     reports, ledger_restore, status, payload = write_stage()
