@@ -45,6 +45,7 @@ OPERATOR_READS = {
     "FILTERS_TOO_STRICT_REVIEW",
     "DATA_PROVIDER_COVERAGE_REVIEW",
     "HEALTHY_NO_VALUE_WINDOW",
+    "EVENTS_ONLY_RESEARCH_NO_STATS",
     "UNKNOWN_REVIEW",
 }
 
@@ -291,6 +292,15 @@ def classify_operator_read(metrics: dict[str, Any]) -> str:
 
     if live_fixtures_seen > 0 and groups_total <= 0 and decisions_total <= 0:
         return "DATA_PROVIDER_COVERAGE_REVIEW"
+
+    if (
+        candidates_this_cycle > 0
+        and level3_state_ready_count > 0
+        and level3_events_available_count > 0
+        and level3_trade_ready_count == 0
+        and level3_stats_available_count == 0
+    ):
+        return "EVENTS_ONLY_RESEARCH_NO_STATS"
 
     if decisions_total > 0 and candidates_this_cycle == 0 and score_only_decisions > 0 and level3_state_ready_count == 0:
         return "SCORE_ONLY_NO_LEVEL3_STATE"

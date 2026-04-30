@@ -63,6 +63,7 @@ def test_live_opportunity_scanner_compiles_runs_outputs_safety_and_preserves_led
         "FILTERS_TOO_STRICT_REVIEW",
         "DATA_PROVIDER_COVERAGE_REVIEW",
         "HEALTHY_NO_VALUE_WINDOW",
+        "EVENTS_ONLY_RESEARCH_NO_STATS",
         "UNKNOWN_REVIEW",
     }
     for flag in SAFETY_FLAGS:
@@ -105,6 +106,27 @@ def test_live_opportunity_scanner_classifies_score_only_and_negative_value():
         }
     )
     assert negative_value == "NEGATIVE_VALUE_ONLY"
+
+
+def test_live_opportunity_scanner_classifies_events_only_research_no_stats():
+    scanner = load_scanner_module()
+
+    operator_read = scanner.classify_operator_read(
+        {
+            "live_fixtures_seen": 4,
+            "groups_total": 4,
+            "groups_priced": 4,
+            "decisions_total": 4,
+            "candidates_this_cycle": 2,
+            "level3_state_ready_count": 2,
+            "level3_events_available_count": 2,
+            "level3_trade_ready_count": 0,
+            "level3_stats_available_count": 0,
+        }
+    )
+
+    assert operator_read == "EVENTS_ONLY_RESEARCH_NO_STATS"
+    assert operator_read in scanner.OPERATOR_READS
 
 
 def test_full_cycle_includes_live_opportunity_scanner_once_and_preserves_ledger():
