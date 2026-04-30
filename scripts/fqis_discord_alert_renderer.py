@@ -159,6 +159,36 @@ def record_is_sendable(record: dict[str, Any]) -> bool:
     )
 
 
+def record_has_hard_red_flag(record: dict[str, Any]) -> bool:
+    red_flags = record.get("red_flags") or []
+    if not isinstance(red_flags, list):
+        red_flags = [red_flags]
+
+    bucket_policy_action = safe_text(
+        first_present(
+            record,
+            "bucket_policy_action",
+            "bucket_action",
+            "bucket",
+            default="",
+        )
+    ).upper()
+
+    research_bucket = safe_text(record.get("research_bucket")).upper()
+
+    hard_terms = {
+        "KILL_OR_QUARANTINE_BUCKET",
+        "QUARANTINE",
+        "KILL",
+    }
+
+    values = [safe_text(item).upper() for item in red_flags]
+    values.append(bucket_policy_action)
+    values.append(research_bucket)
+
+    return any(any(term in value for term in hard_terms) for value in values)
+
+
 def unsafe_source_flags(payload: dict[str, Any]) -> list[str]:
     unsafe_names = set(SAFETY_BLOCK)
     hits: list[str] = []
@@ -187,6 +217,9 @@ def route_record(
     unsafe_hits: list[str],
 ) -> str:
     life = lifecycle(record)
+
+    if record_has_hard_red_flag(record):
+        return "model_logs"
 
     if unsafe_hits or payload_status != "READY":
         return "model_logs"
@@ -248,12 +281,20 @@ def normalize_record(record: dict[str, Any], route: str, index: int) -> dict[str
 
     display_decision = "PAPER VALUE" if route == "elite_alerts" else "PAPER REVIEW"
 
+    red_flags = record.get("red_flags") or []
+    if not isinstance(red_flags, list):
+        red_flags = [red_flags]
+
+    red_flag_text = ", ".join(safe_text(item) for item in red_flags if safe_text(item))
+
     reasons = [
         first_present(record, "operator_note", "reason", "primary_veto", default=""),
-        first_present(record, "bucket_action", "bucket", default=""),
+        first_present(record, "bucket_policy_action", "bucket_action", "bucket", default=""),
+        red_flag_text,
         lifecycle(record),
         first_present(record, "paper_action", default=""),
     ]
+
     risk_notes = [compact_reason(item, 90) for item in reasons if safe_text(item)]
     risk_notes = list(dict.fromkeys(risk_notes))[:4]
     if not risk_notes:
